@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+}
+
+/* Horizontal tab scrolling with scroll snap (modern web guidance) */
+.scroll-tabs {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-tabs::-webkit-scrollbar {
+  display: none;
+}
+.scroll-tabs > * {
+  scroll-snap-align: start;
+  flex-shrink: 0;
+}
+
+/* Custom styles for Hospital Treatment Chart reproduction */
+.treatment-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.treatment-table th,
+.treatment-table td {
+  border: 1px solid #334155;
+  padding: 8px 12px;
+}
+
+/* Print optimizations */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  .print-page-break {
+    page-break-before: always;
+  }
+  .treatment-table {
+    border: 1.5px solid #000000 !important;
+  }
+  .treatment-table th,
+  .treatment-table td {
+    border: 1px solid #000000 !important;
+    color: #000000 !important;
+  }
+}

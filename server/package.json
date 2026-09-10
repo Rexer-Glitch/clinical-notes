@@ -1,0 +1,25 @@
+{
+  "name": "clinical-notes-server",
+  "version": "1.0.0",
+  "description": "Backend API for Clinical Notes, Referral Notes, and Treatment/Drug Charts",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "@google/genai": "^2.21.0",
+    "bcryptjs": "^2.4.3",
+    "sqlite3": "^5.1.7",
+    "cors": "^2.8.5",
+    "docxtemplater": "^3.50.0",
+    "docx": "^9.1.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "pizzip": "^3.1.7"
+  }
+}

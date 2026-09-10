@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production builds
+dist/
+client/dist/
+
+# SQLite Databases & temporary files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+server/clinical_notes.db
+server/clinical_notes.db-journal
+
+# Uploads directory (keep folder, ignore uploaded docs)
+server/uploads/*.docx
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+server/.env
+
+# Temporary & debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+scratch/
+*.tmp
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Vercel
+.vercel
