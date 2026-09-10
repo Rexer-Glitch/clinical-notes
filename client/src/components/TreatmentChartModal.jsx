@@ -343,7 +343,7 @@ export default function TreatmentChartModal({ note, drugSheet, onClose }) {
                       <span className="ml-2 uppercase font-bold text-slate-700">{note.patient_name} {note.patient_surname}</span>
                     </div>
                     <div>
-                      <span className="font-semibold">AGE:</span> <span className="font-bold">{note.age || '___'}</span>
+                      <span className="font-semibold">AGE:</span> <span className="font-bold">{note.age ? `${String(note.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim()} ${raw.age_unit || (/month/i.test(String(note.age)) ? 'months' : 'years')}` : '___'}</span>
                     </div>
                     <div>
                       <span className="font-semibold">SEX:</span> <span className="font-bold">{note.gender || '___'}</span>
@@ -544,7 +544,13 @@ export default function TreatmentChartModal({ note, drugSheet, onClose }) {
                             </div>
 
                             <div>
-                              <p>{note.age ? `${note.age} year old ${note.gender ? note.gender.toLowerCase() : 'patient'}` : ''}{raw.rvd_status ? `, ${raw.rvd_status}` : ''}</p>
+                              <p>{(() => {
+                                if (!note.age) return '';
+                                const isMonths = (raw.age_unit || '').toLowerCase() === 'months' || /month/i.test(String(note.age));
+                                const ageUnit = isMonths ? 'month' : 'year';
+                                const cleanAge = String(note.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim() || note.age;
+                                return `${cleanAge} ${ageUnit} old ${note.gender ? note.gender.toLowerCase() : 'patient'}`;
+                              })()}{raw.rvd_status ? `, ${raw.rvd_status}` : ''}</p>
                               <p>{raw.comorbidities || 'Nil known comorbidities'}</p>
                             </div>
 
@@ -562,6 +568,10 @@ export default function TreatmentChartModal({ note, drugSheet, onClose }) {
                               const v = raw.vitals_recorded || raw.vitals;
                               const vParts = [];
                               if (v && typeof v === 'object') {
+                                if (v.cwt && String(v.cwt).trim()) vParts.push(`Wt ${String(v.cwt).trim()}${/kg/i.test(v.cwt) ? '' : ' kg'}`);
+                                else if (v.weight && String(v.weight).trim()) vParts.push(`Wt ${String(v.weight).trim()}${/kg/i.test(v.weight) ? '' : ' kg'}`);
+                                if (v.ht && String(v.ht).trim()) vParts.push(`Ht ${String(v.ht).trim()}${/cm|m/i.test(v.ht) ? '' : ' cm'}`);
+                                else if (v.height && String(v.height).trim()) vParts.push(`Ht ${String(v.height).trim()}${/cm|m/i.test(v.height) ? '' : ' cm'}`);
                                 if (v.bp) vParts.push(`BP ${v.bp}${/mm\s*hg/i.test(v.bp) ? '' : ' mmHg'}`);
                                 if (v.hr) vParts.push(`HR ${v.hr}${/bpm/i.test(v.hr) ? '' : ' bpm'}`);
                                 if (v.temp) vParts.push(`Temp ${v.temp}${/°|c/i.test(v.temp) ? '' : '°C'}`);

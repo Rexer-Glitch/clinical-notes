@@ -36,6 +36,7 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
     patient_surname: '',
     reg_no: '',
     age: '',
+    age_unit: 'years',
     gender: 'Female',
     ward: '',
     diagnosis: '',
@@ -63,6 +64,8 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
 
   // Vitals state for quick entry
   const [vitals, setVitals] = useState({
+    cwt: '',
+    ht: '',
     bp: '',
     hr: '',
     temp: '',
@@ -93,13 +96,16 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
       api.notes.get(noteId).then(res => {
         const n = res.note;
         const raw = n.raw_data || {};
+        const isMonths = raw.age_unit === 'months' || /month/i.test(String(n.age || ''));
+        const cleanAge = n.age ? String(n.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim() : '';
         setFormData({
           hospital_name: n.hospital_name || raw.hospital_name || 'Gumare Primary Hospital',
           document_title: raw.document_title || 'TREATMENT CHART',
           patient_name: n.patient_name || '',
           patient_surname: n.patient_surname || '',
           reg_no: n.reg_no || '',
-          age: n.age || '',
+          age: cleanAge || n.age || '',
+          age_unit: isMonths ? 'months' : (raw.age_unit || 'years'),
           gender: n.gender || 'Female',
           ward: n.ward || 'TB',
           diagnosis: n.diagnosis || '',
@@ -118,11 +124,17 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
           plan: raw.plan || []
         });
 
-        if (raw.vitals_recorded) {
-          setVitals(raw.vitals_recorded);
-        } else if (raw.vitals) {
-          setVitals(raw.vitals);
-        }
+        const vSrc = raw.vitals_recorded || raw.vitals || {};
+        setVitals({
+          cwt: vSrc.cwt || vSrc.weight || '',
+          ht: vSrc.ht || vSrc.height || '',
+          bp: vSrc.bp || '',
+          hr: vSrc.hr || '',
+          temp: vSrc.temp || '',
+          spo2: vSrc.spo2 || '',
+          rr: vSrc.rr || '',
+          rbs: vSrc.rbs || ''
+        });
 
         if (Array.isArray(raw.active_exam_systems) && raw.active_exam_systems.length > 0) {
           setActiveExamSystems(raw.active_exam_systems);
@@ -598,6 +610,8 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
     try {
       // Format vitals summary if any vitals are entered
       const vitalsParts = [];
+      if (vitals.cwt && String(vitals.cwt).trim()) vitalsParts.push(`Wt ${String(vitals.cwt).trim()}${/kg/i.test(vitals.cwt) ? '' : ' kg'}`);
+      if (vitals.ht && String(vitals.ht).trim()) vitalsParts.push(`Ht ${String(vitals.ht).trim()}${/cm|m/i.test(vitals.ht) ? '' : ' cm'}`);
       if (vitals.bp) vitalsParts.push(`BP ${vitals.bp}${/mm\s*hg/i.test(vitals.bp) ? '' : ' mmHg'}`);
       if (vitals.hr) vitalsParts.push(`HR ${vitals.hr}${/bpm/i.test(vitals.hr) ? '' : ' bpm'}`);
       if (vitals.temp) vitalsParts.push(`Temp ${vitals.temp}${/°|c/i.test(vitals.temp) ? '' : '°C'}`);
@@ -613,7 +627,7 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
         patient_name: formData.patient_name,
         patient_surname: formData.patient_surname,
         reg_no: formData.reg_no,
-        age: formData.age,
+        age: formData.age ? `${String(formData.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim()} ${formData.age_unit || (/month/i.test(String(formData.age)) ? 'months' : 'years')}` : '',
         gender: formData.gender,
         ward: formData.ward,
         diagnosis: formData.diagnosis,
@@ -661,6 +675,163 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
       alert('Failed to save note: ' + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Helper to append item to Management Plan without duplicate
+  const appendToPlan = (planItem) => {
+    if (!planItem) return;
+    setFormData(prev => {
+      const currentPlan = Array.isArray(prev.plan) 
+        ? [...prev.plan] 
+        : (typeof prev.plan === 'string' && prev.plan ? prev.plan.split('\n') : []);
+      if (currentPlan.some(p => p.trim().toLowerCase() === planItem.trim().toLowerCase())) {
+        return prev;
+      }
+      return {
+        ...prev,
+        plan: [...currentPlan, planItem]
+      };
+    });
+  };
+
+  // Helper to sync all currently prescribed meds & fluids into Management Plan
+  const handleSyncPlanWithMedsAndFluids = () => {
+    const newItems = [];
+
+    // IV Fluids
+    if (ivFluids && ivFluids.length > 0) {
+      ivFluids.forEach(f => {
+        if (f.fluid) {
+          newItems.push(`IVF: ${f.fluid} ${f.volume || ''} ${f.rate_hours ? `(${f.rate_hours})` : ''}`.trim());
+        }
+      });
+    }
+
+    // Stat Meds
+    if (statMeds && statMeds.length > 0) {
+      statMeds.forEach(sm => {
+        if (sm.drug) {
+          newItems.push(`Stat: ${sm.drug} ${sm.dose || ''} ${sm.route || ''} ${sm.given_time || 'Stat'}`.trim());
+        }
+      });
+    }
+
+    // Regular Meds
+    if (medications && medications.length > 0) {
+      medications.forEach(m => {
+        if (m.drug) {
+          newItems.push(`${m.drug} ${m.dose || ''} ${m.route || ''} ${m.frequency || ''} ${m.indication ? `(${m.indication})` : ''}`.trim());
+        }
+      });
+    }
+
+    if (newItems.length === 0) {
+      alert('No medications or fluids currently prescribed to sync into the plan.');
+      return;
+    }
+
+    setFormData(prev => {
+      const currentPlan = Array.isArray(prev.plan) 
+        ? [...prev.plan] 
+        : (typeof prev.plan === 'string' && prev.plan ? prev.plan.split('\n') : []);
+      
+      const filteredExisting = currentPlan.filter(p => p && p.trim());
+      const additions = newItems.filter(item => 
+        !filteredExisting.some(existing => existing.toLowerCase().includes(item.toLowerCase().slice(0, 20)))
+      );
+
+      return {
+        ...prev,
+        plan: [...filteredExisting, ...additions]
+      };
+    });
+  };
+
+  // Pediatric & Anthropometry Evaluation
+  const isPediatric = formData.age_unit === 'months' || (formData.age !== '' && !isNaN(Number(formData.age)) && Number(formData.age) < 18);
+  const currentWeightKg = parseFloat(vitals.cwt);
+  const hasWeight = !isNaN(currentWeightKg) && currentWeightKg > 0;
+
+  // Holliday-Segar Maintenance Fluid Calculation
+  // 100 ml/kg for 1st 10kg, 50 ml/kg for 10-20kg, 20 ml/kg thereafter
+  let hsDailyMl = 0;
+  let hsHourlyRate = 0;
+  if (hasWeight) {
+    if (currentWeightKg <= 10) {
+      hsDailyMl = currentWeightKg * 100;
+      hsHourlyRate = currentWeightKg * 4;
+    } else if (currentWeightKg <= 20) {
+      hsDailyMl = 1000 + (currentWeightKg - 10) * 50;
+      hsHourlyRate = 40 + (currentWeightKg - 10) * 2;
+    } else {
+      hsDailyMl = 1500 + (currentWeightKg - 20) * 20;
+      hsHourlyRate = 60 + (currentWeightKg - 20) * 1;
+    }
+    hsDailyMl = Math.round(hsDailyMl);
+    hsHourlyRate = Math.round(hsHourlyRate);
+  }
+
+  // Resuscitation Boluses (10 & 20 ml/kg)
+  const bolus10Ml = hasWeight ? Math.round(currentWeightKg * 10) : 0;
+  const bolus20Ml = hasWeight ? Math.round(currentWeightKg * 20) : 0;
+
+  // Add Pediatric Maintenance Fluid to MAR and Plan
+  const handleAddPediatricMaintenanceFluid = () => {
+    if (!hasWeight) {
+      alert('Please enter current weight (cwt in kg) in the vitals section first.');
+      return;
+    }
+    const fluidName = "Half-strength Darrow's with 5% Dextrose";
+    const volumeStr = `${hsDailyMl} ml`;
+    const rateStr = `Over 24 hrs (${hsHourlyRate} ml/hr)`;
+    const indicationStr = `Maintenance fluids (${currentWeightKg}kg Holliday-Segar)`;
+
+    setIvFluids(prev => [...prev, {
+      fluid: fluidName,
+      volume: volumeStr,
+      rate_hours: rateStr,
+      indication: indicationStr
+    }]);
+
+    appendToPlan(`IVF: ${fluidName} ${volumeStr} over 24 hrs (${hsHourlyRate} ml/hr) as maintenance [Holliday-Segar: ${currentWeightKg}kg]`);
+  };
+
+  // Add Pediatric Bolus to Stat Meds and Plan
+  const handleAddPediatricFluidBolus = (mlPerKg = 20) => {
+    if (!hasWeight) {
+      alert('Please enter current weight (cwt in kg) in the vitals section first.');
+      return;
+    }
+    const bolusVol = Math.round(currentWeightKg * mlPerKg);
+    const drugName = '0.9% Normal Saline Bolus';
+    const doseStr = `${bolusVol} ml (${mlPerKg} ml/kg)`;
+    const givenTimeStr = 'Stat over 30-60 min';
+
+    handleAddStatMed(drugName, doseStr, 'IV', givenTimeStr);
+    appendToPlan(`IVF Bolus: 0.9% Normal Saline ${bolusVol}ml (${mlPerKg}ml/kg) IV stat over 30-60 minutes`);
+  };
+
+  // Add Pediatric Weight-Based Medication to MAR and Plan
+  const handleAddPediatricWeightMed = ({ drug, dosePerKg, unit = 'mg', route = 'PO', frequency = 'TDS', indication = '', maxDose = null, isStat = false }) => {
+    if (!hasWeight) {
+      alert('Please enter current weight (cwt in kg) in the vitals section first.');
+      return;
+    }
+    let calculatedDose = currentWeightKg * dosePerKg;
+    if (maxDose && calculatedDose > maxDose) calculatedDose = maxDose;
+    
+    const formattedDoseNum = calculatedDose >= 10 ? Math.round(calculatedDose) : Number(calculatedDose.toFixed(1));
+    const doseStr = `${formattedDoseNum}${unit}`;
+    const formulaStr = `(${dosePerKg}${unit}/kg)`;
+    const fullDoseWithFormula = `${doseStr} ${formulaStr}`;
+
+    if (isStat) {
+      handleAddStatMed(drug, fullDoseWithFormula, route, 'Stat');
+      appendToPlan(`${drug} ${fullDoseWithFormula} ${route} Stat${indication ? ` for ${indication}` : ''}`);
+    } else {
+      handleAddQuickMed(drug, fullDoseWithFormula, route, frequency, `${indication || 'Pediatric dosing'} (${currentWeightKg}kg)`);
+      appendToPlan(`${drug} ${fullDoseWithFormula} ${route} ${frequency}${indication ? ` for ${indication}` : ''}`);
     }
   };
 
@@ -940,16 +1111,35 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Age</label>
-                <input
-                  type="text"
-                  placeholder="15"
-                  value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
-                  className="w-full text-xs sm:text-sm p-2.5 border border-slate-300 rounded-xl outline-none focus:border-emerald-500"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">Age</label>
+                  {isPediatric && (
+                    <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">
+                      Pediatric
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder={formData.age_unit === 'months' ? '18' : '15'}
+                    value={formData.age}
+                    onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                    className="w-full text-xs sm:text-sm p-2.5 border border-slate-300 rounded-xl outline-none focus:border-emerald-500 font-semibold"
+                  />
+                  <select
+                    value={formData.age_unit || 'years'}
+                    onChange={(e) => setFormData({ ...formData, age_unit: e.target.value })}
+                    className="text-xs p-2 border border-slate-300 rounded-xl outline-none focus:border-emerald-500 bg-white font-semibold text-slate-700 shrink-0 cursor-pointer shadow-2xs"
+                  >
+                    <option value="years">Years</option>
+                    <option value="months">Months</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Gender</label>
@@ -975,12 +1165,12 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
             </div>
           </div>
 
-          {/* Vitals Strip with Clinical Alerts */}
+          {/* Vitals Strip with Anthropometry (cwt, ht) & Clinical Alerts */}
           <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                 <Activity className="w-4 h-4 text-emerald-600" />
-                Baseline Vitals & Hemodynamics
+                Baseline Vitals & Anthropometry
               </h4>
               <div className="flex items-center gap-1.5">
                 {hasTachycardia && (
@@ -1001,7 +1191,38 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-xs">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-0.5 flex items-center justify-between">
+                  <span>cwt (kg)</span>
+                  {isPediatric && <span className="text-[9px] text-emerald-700 font-bold">Wt</span>}
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={vitals.cwt}
+                  onChange={(e) => setVitals({ ...vitals, cwt: e.target.value })}
+                  placeholder="e.g. 10.5"
+                  className={`w-full p-2 border rounded-lg text-center font-mono font-bold ${
+                    isPediatric ? 'border-emerald-400 bg-emerald-50/70 text-emerald-950 focus:bg-white' : 'border-slate-300'
+                  }`}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold text-slate-700 block mb-0.5">
+                  ht (cm)
+                </label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={vitals.ht}
+                  onChange={(e) => setVitals({ ...vitals, ht: e.target.value })}
+                  placeholder="e.g. 75"
+                  className="w-full p-2 border border-slate-300 rounded-lg text-center font-mono font-semibold"
+                />
+              </div>
               <div>
                 <label className="text-[11px] text-slate-500 block mb-0.5">BP (mmHg)</label>
                 <input
@@ -1068,6 +1289,249 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
               </div>
             </div>
           </div>
+
+          {/* Pediatric Weight-Based Fluids & Medication Engine */}
+          {isPediatric && (
+            <div className="bg-linear-to-br from-emerald-50 via-teal-50 to-blue-50 p-4 sm:p-5 rounded-2xl border-2 border-emerald-500/50 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-2xs">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-tight flex items-center gap-1.5">
+                      Pediatric Dosing & Fluid Calculator
+                      <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
+                        {formData.age ? `${formData.age} ${formData.age_unit || 'years'}` : 'Pediatric'}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-emerald-800">
+                      Populates exact weight-based quantities into MAR Drug Sheet and Management Plan
+                    </p>
+                  </div>
+                </div>
+                {hasWeight ? (
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 shadow-2xs self-start sm:self-auto">
+                    <span>cwt:</span>
+                    <span className="font-mono text-sm text-emerald-700">{currentWeightKg} kg</span>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 border border-amber-300 rounded-xl text-[11px] font-bold text-amber-900 self-start sm:self-auto">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-700" /> Enter weight (cwt) in vitals
+                  </div>
+                )}
+              </div>
+
+              {!hasWeight ? (
+                <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">Weight required for pediatric calculations</p>
+                    <p className="text-[11px] text-amber-800">Please enter current weight (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded">cwt</code> in kg) in the vitals section above to automatically calculate Holliday-Segar maintenance fluids, resuscitation boluses, and weight-based medication doses.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Holliday-Segar Maintenance Fluids */}
+                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                      <div>
+                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                          <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                          Holliday-Segar Maintenance IV Fluids ({currentWeightKg} kg)
+                        </span>
+                        <p className="text-[11px] text-slate-600 font-mono mt-0.5">
+                          24-hr Total: <strong className="text-emerald-900">{hsDailyMl} ml/day</strong> &bull; Rate: <strong className="text-emerald-900">{hsHourlyRate} ml/hr</strong> (4-2-1 rule)
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleAddPediatricMaintenanceFluid}
+                        className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-2xs transition flex items-center gap-1 shrink-0 self-start sm:self-auto cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Maintenance Fluid (to MAR & Plan)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Resuscitation Fluid Boluses */}
+                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                        Resuscitation Fluid Boluses (0.9% Normal Saline / Ringers Lactate)
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricFluidBolus(10)}
+                        className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-teal-700" /> 10 ml/kg Bolus ({bolus10Ml} ml stat)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricFluidBolus(20)}
+                        className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-teal-700" /> 20 ml/kg Shock Bolus ({bolus20Ml} ml stat)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Weight-Based Common Pediatric Medications */}
+                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                        Weight-Based Medication Presets (Click to add to MAR & Plan)
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Based on {currentWeightKg} kg
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Paracetamol',
+                          dosePerKg: 15,
+                          unit: 'mg',
+                          route: 'PO',
+                          frequency: 'TDS',
+                          indication: 'Analgesia / Fever',
+                          maxDose: 1000
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Paracetamol {Math.round(currentWeightKg * 15)}mg (15mg/kg) PO TDS
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Ceftriaxone',
+                          dosePerKg: 50,
+                          unit: 'mg',
+                          route: 'IV',
+                          frequency: 'OD',
+                          indication: 'Severe bacterial infection',
+                          maxDose: 2000
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Ceftriaxone {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV OD
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Cefotaxime',
+                          dosePerKg: 50,
+                          unit: 'mg',
+                          route: 'IV',
+                          frequency: 'TDS',
+                          indication: 'Neonatal/Pediatric sepsis',
+                          maxDose: 2000
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Cefotaxime {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV TDS
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Ampicillin',
+                          dosePerKg: 50,
+                          unit: 'mg',
+                          route: 'IV',
+                          frequency: 'QID',
+                          indication: 'Bacterial coverage / Listeria',
+                          maxDose: 2000
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Ampicillin {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV QID
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Gentamicin',
+                          dosePerKg: 7.5,
+                          unit: 'mg',
+                          route: 'IV',
+                          frequency: 'OD',
+                          indication: 'Gram-negative coverage'
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Gentamicin {Number((currentWeightKg * 7.5).toFixed(1))}mg (7.5mg/kg) IV OD
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Ibuprofen',
+                          dosePerKg: 10,
+                          unit: 'mg',
+                          route: 'PO',
+                          frequency: 'TDS',
+                          indication: 'Anti-inflammatory / Pain',
+                          maxDose: 400
+                        })}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Ibuprofen {Math.round(currentWeightKg * 10)}mg (10mg/kg) PO TDS
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddPediatricWeightMed({
+                          drug: 'Diazepam',
+                          dosePerKg: 0.3,
+                          unit: 'mg',
+                          route: 'IV',
+                          frequency: 'STAT',
+                          indication: 'Convulsion / Status epilepticus',
+                          maxDose: 10,
+                          isStat: true
+                        })}
+                        className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Diazepam {Number((currentWeightKg * 0.3).toFixed(1))}mg (0.3mg/kg) IV Stat
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const isUnder6Mo = formData.age_unit === 'months' && Number(formData.age) < 6;
+                          const zDose = isUnder6Mo ? '10mg' : '20mg';
+                          handleAddQuickMed('Zinc Sulfate', zDose, 'PO', 'OD', 'Diarrhea / Gastroenteritis x 14 days');
+                          appendToPlan(`Zinc Sulfate ${zDose} PO OD for 14 days`);
+                        }}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + Zinc Sulfate {formData.age_unit === 'months' && Number(formData.age) < 6 ? '10mg' : '20mg'} OD
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const orsMl = Math.round(currentWeightKg * 75);
+                          handleAddQuickMed('ORS (Plan B)', `${orsMl} ml`, 'PO', 'PRN', 'Dehydration over 4 hours');
+                          appendToPlan(`Oral Rehydration Solution (ORS) ${orsMl}ml (75ml/kg) PO over 4 hours`);
+                        }}
+                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                      >
+                        + ORS Plan B {Math.round(currentWeightKg * 75)}ml (75ml/kg) PO
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Clinical History & Complaints */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
@@ -1276,9 +1740,20 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                 <label className="block text-xs font-semibold text-slate-700">
                   Management Plan (Numbered Items)
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">
-                  Each line automatically numbers (1, 2, 3...)
-                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSyncPlanWithMedsAndFluids}
+                    className="text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border border-emerald-300 font-bold px-2.5 py-0.5 rounded-lg flex items-center gap-1.5 transition shadow-2xs cursor-pointer"
+                    title="Populate plan with current weight-based medications & IV fluids"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Sync Plan with Meds & Fluids</span>
+                  </button>
+                  <span className="text-[10px] text-slate-400 font-medium hidden sm:inline">
+                    Each line automatically numbers (1, 2, 3...)
+                  </span>
+                </div>
               </div>
               <textarea
                 rows={4}
@@ -1293,54 +1768,48 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
               <div className="flex flex-wrap gap-1 mt-1.5">
                 <button
                   type="button"
-                  onClick={() => {
-                    const current = Array.isArray(formData.plan) ? [...formData.plan] : (formData.plan ? formData.plan.split('\n') : []);
-                    setFormData({ ...formData, plan: [...current, 'Admit to ward as per protocol'] });
-                  }}
-                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition"
+                  onClick={() => appendToPlan('Admit to ward as per protocol')}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition cursor-pointer"
                 >
                   + Admit to ward
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const current = Array.isArray(formData.plan) ? [...formData.plan] : (formData.plan ? formData.plan.split('\n') : []);
-                    setFormData({ ...formData, plan: [...current, 'Baseline bloods: FBC, LFT, RFT, CMP'] });
-                  }}
-                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition"
+                  onClick={() => appendToPlan('Baseline bloods: FBC, LFT, RFT, CMP')}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition cursor-pointer"
                 >
                   + Baseline bloods
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const current = Array.isArray(formData.plan) ? [...formData.plan] : (formData.plan ? formData.plan.split('\n') : []);
-                    setFormData({ ...formData, plan: [...current, 'Administer medications as charted on Drug Sheet'] });
-                  }}
-                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition"
+                  onClick={() => appendToPlan('Administer medications as charted on Drug Sheet')}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition cursor-pointer"
                 >
                   + MAR Medications
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const current = Array.isArray(formData.plan) ? [...formData.plan] : (formData.plan ? formData.plan.split('\n') : []);
-                    setFormData({ ...formData, plan: [...current, 'Monitor vitals 4 hourly'] });
-                  }}
-                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition"
+                  onClick={() => appendToPlan('Monitor vitals 4 hourly')}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition cursor-pointer"
                 >
                   + Vitals 4-hourly
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const current = Array.isArray(formData.plan) ? [...formData.plan] : (formData.plan ? formData.plan.split('\n') : []);
-                    setFormData({ ...formData, plan: [...current, 'Strict fluid balance / Intake & Output'] });
-                  }}
-                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition"
+                  onClick={() => appendToPlan('Strict fluid balance / Intake & Output')}
+                  className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-700 px-2 py-0.5 rounded-md font-medium transition cursor-pointer"
                 >
                   + Strict fluid balance
                 </button>
+                {isPediatric && hasWeight && (
+                  <button
+                    type="button"
+                    onClick={handleAddPediatricMaintenanceFluid}
+                    className="text-[10px] bg-teal-100 hover:bg-teal-200 text-teal-950 border border-teal-300 px-2 py-0.5 rounded-md font-bold transition cursor-pointer"
+                  >
+                    + Holliday-Segar IVF ({hsDailyMl}ml/d)
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1371,45 +1840,133 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
 
             {/* Quick add chips for common medications */}
             <div>
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Tap to quick-add medication:
-              </span>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  Tap to quick-add medication:
+                </span>
+                {isPediatric && hasWeight && (
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-md">
+                    {currentWeightKg} kg Pediatric Dosing
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleAddQuickMed('START ATT', '3 tabs', 'PO', 'OD', 'Pulmonary TB')}
-                  className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg"
-                >
-                  + ATT 3 tabs OD
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddQuickMed('Pyridoxime', '25mg', 'PO', 'OD', 'Prophylaxis')}
-                  className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg"
-                >
-                  + Pyridoxime 25mg OD
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddQuickMed('Cefotaxime', '1g', 'IV', 'TDS', 'Bacterial coverage')}
-                  className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg"
-                >
-                  + Cefotaxime 1g IV TDS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddQuickMed('Paracetamol', '1g', 'PO', 'TDS', 'Analgesia / Fever')}
-                  className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg"
-                >
-                  + Paracetamol 1g TDS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddQuickMed('Ibuprofen', '400mg', 'PO', 'TDS', 'Joint pain')}
-                  className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg"
-                >
-                  + Ibuprofen 400mg TDS
-                </button>
+                {isPediatric && hasWeight ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Paracetamol',
+                        dosePerKg: 15,
+                        unit: 'mg',
+                        route: 'PO',
+                        frequency: 'TDS',
+                        indication: 'Analgesia / Fever',
+                        maxDose: 1000
+                      })}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + Paracetamol {Math.round(currentWeightKg * 15)}mg (15mg/kg) TDS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Ceftriaxone',
+                        dosePerKg: 50,
+                        unit: 'mg',
+                        route: 'IV',
+                        frequency: 'OD',
+                        indication: 'Severe infection',
+                        maxDose: 2000
+                      })}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + Ceftriaxone {Math.round(currentWeightKg * 50)}mg (50mg/kg) OD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Cefotaxime',
+                        dosePerKg: 50,
+                        unit: 'mg',
+                        route: 'IV',
+                        frequency: 'TDS',
+                        indication: 'Bacterial coverage',
+                        maxDose: 2000
+                      })}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + Cefotaxime {Math.round(currentWeightKg * 50)}mg (50mg/kg) TDS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Gentamicin',
+                        dosePerKg: 7.5,
+                        unit: 'mg',
+                        route: 'IV',
+                        frequency: 'OD',
+                        indication: 'Gram-negative coverage'
+                      })}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + Gentamicin {Number((currentWeightKg * 7.5).toFixed(1))}mg (7.5mg/kg) OD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Ampicillin',
+                        dosePerKg: 50,
+                        unit: 'mg',
+                        route: 'IV',
+                        frequency: 'QID',
+                        indication: 'Bacterial coverage',
+                        maxDose: 2000
+                      })}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + Ampicillin {Math.round(currentWeightKg * 50)}mg QID
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickMed('START ATT', '3 tabs', 'PO', 'OD', 'Pulmonary TB')}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                    >
+                      + ATT 3 tabs OD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickMed('Pyridoxime', '25mg', 'PO', 'OD', 'Prophylaxis')}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                    >
+                      + Pyridoxime 25mg OD
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickMed('Cefotaxime', '1g', 'IV', 'TDS', 'Bacterial coverage')}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                    >
+                      + Cefotaxime 1g IV TDS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickMed('Paracetamol', '1g', 'PO', 'TDS', 'Analgesia / Fever')}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                    >
+                      + Paracetamol 1g TDS
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddQuickMed('Ibuprofen', '400mg', 'PO', 'TDS', 'Joint pain')}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg cursor-pointer"
+                    >
+                      + Ibuprofen 400mg TDS
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -1526,13 +2083,25 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
                   IV Fluids ({ivFluids.length})
                 </span>
-                <button
-                  type="button"
-                  onClick={handleAddFluid}
-                  className="text-xs text-emerald-700 font-semibold hover:text-emerald-800 flex items-center gap-1"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Fluid
-                </button>
+                <div className="flex items-center gap-1.5">
+                  {isPediatric && hasWeight && (
+                    <button
+                      type="button"
+                      onClick={handleAddPediatricMaintenanceFluid}
+                      className="text-[11px] bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2 py-0.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                      title="Add Holliday-Segar pediatric maintenance fluids"
+                    >
+                      <Plus className="w-3 h-3 text-teal-700" /> Holliday-Segar ({hsHourlyRate} ml/hr)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleAddFluid}
+                    className="text-xs text-emerald-700 font-semibold hover:text-emerald-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Fluid
+                  </button>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1589,7 +2158,7 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                 <button
                   type="button"
                   onClick={() => handleAddStatMed()}
-                  className="text-xs text-amber-700 font-semibold hover:text-amber-800 flex items-center gap-1"
+                  className="text-xs text-amber-700 font-semibold hover:text-amber-800 flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Stat Med
                 </button>
@@ -1597,41 +2166,92 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
 
               {/* Quick Stat Med Chips */}
               <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleAddStatMed('Cefotaxime', '1g', 'IV', 'Stat on arrival')}
-                  className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded"
-                >
-                  + Cefotaxime 1g IV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStatMed('Ringers Lactate', '1 L', 'IV', 'Stat over 2 hrs')}
-                  className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded"
-                >
-                  + RL 1 L IV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStatMed('Paracetamol', '1g', 'PO', 'Stat')}
-                  className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded"
-                >
-                  + Paracetamol 1g PO
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStatMed('Diazepam', '10mg', 'IV', 'Stat')}
-                  className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded"
-                >
-                  + Diazepam 10mg IV
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleAddStatMed('Hydrocortisone', '100mg', 'IV', 'Stat')}
-                  className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded"
-                >
-                  + Hydrocortisone 100mg
-                </button>
+                {isPediatric && hasWeight ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricFluidBolus(10)}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Bolus 10 ml/kg ({bolus10Ml} ml stat)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricFluidBolus(20)}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Shock Bolus 20 ml/kg ({bolus20Ml} ml stat)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddPediatricWeightMed({
+                        drug: 'Diazepam',
+                        dosePerKg: 0.3,
+                        unit: 'mg',
+                        route: 'IV',
+                        frequency: 'STAT',
+                        indication: 'Convulsion',
+                        maxDose: 10,
+                        isStat: true
+                      })}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Diazepam {Number((currentWeightKg * 0.3).toFixed(1))}mg Stat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Paracetamol', `${Math.round(currentWeightKg * 15)}mg (15mg/kg)`, 'PR/PO', 'Stat')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Paracetamol {Math.round(currentWeightKg * 15)}mg Stat
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Cefotaxime', `${Math.round(currentWeightKg * 50)}mg (50mg/kg)`, 'IV', 'Stat on arrival')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Cefotaxime {Math.round(currentWeightKg * 50)}mg IV Stat
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Cefotaxime', '1g', 'IV', 'Stat on arrival')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Cefotaxime 1g IV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Ringers Lactate', '1 L', 'IV', 'Stat over 2 hrs')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + RL 1 L IV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Paracetamol', '1g', 'PO', 'Stat')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Paracetamol 1g PO
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Diazepam', '10mg', 'IV', 'Stat')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Diazepam 10mg IV
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAddStatMed('Hydrocortisone', '100mg', 'IV', 'Stat')}
+                      className="text-[10px] bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded cursor-pointer"
+                    >
+                      + Hydrocortisone 100mg
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Stat Med Rows */}

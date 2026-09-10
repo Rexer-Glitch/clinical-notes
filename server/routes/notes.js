@@ -13,7 +13,12 @@ function formatTreatmentNoteText(data) {
 
   // Demographics line
   const demo = [];
-  if (data.age) demo.push(`${data.age} year old ${data.gender ? data.gender.toLowerCase() : 'patient'}`);
+  if (data.age) {
+    const isMonths = (data.age_unit || '').toLowerCase() === 'months' || /month/i.test(String(data.age));
+    const ageUnit = isMonths ? 'month' : 'year';
+    const cleanAge = String(data.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim() || data.age;
+    demo.push(`${cleanAge} ${ageUnit} old ${data.gender ? data.gender.toLowerCase() : 'patient'}`);
+  }
   if (data.rvd_status) demo.push(data.rvd_status);
   if (demo.length > 0) parts.push(demo.join(', '));
 
@@ -29,6 +34,10 @@ function formatTreatmentNoteText(data) {
   const vitalsObj = data.vitals_recorded || data.vitals || {};
   const vParts = [];
   if (vitalsObj && typeof vitalsObj === 'object') {
+    if (vitalsObj.cwt && String(vitalsObj.cwt).trim()) vParts.push(`Wt ${String(vitalsObj.cwt).trim()}${/kg/i.test(vitalsObj.cwt) ? '' : ' kg'}`);
+    else if (vitalsObj.weight && String(vitalsObj.weight).trim()) vParts.push(`Wt ${String(vitalsObj.weight).trim()}${/kg/i.test(vitalsObj.weight) ? '' : ' kg'}`);
+    if (vitalsObj.ht && String(vitalsObj.ht).trim()) vParts.push(`Ht ${String(vitalsObj.ht).trim()}${/cm|m/i.test(vitalsObj.ht) ? '' : ' cm'}`);
+    else if (vitalsObj.height && String(vitalsObj.height).trim()) vParts.push(`Ht ${String(vitalsObj.height).trim()}${/cm|m/i.test(vitalsObj.height) ? '' : ' cm'}`);
     if (vitalsObj.bp && String(vitalsObj.bp).trim()) vParts.push(`BP ${String(vitalsObj.bp).trim()}${/mm\s*hg/i.test(vitalsObj.bp) ? '' : ' mmHg'}`);
     if (vitalsObj.hr && String(vitalsObj.hr).trim()) vParts.push(`HR ${String(vitalsObj.hr).trim()}${/bpm/i.test(vitalsObj.hr) ? '' : ' bpm'}`);
     if (vitalsObj.temp && String(vitalsObj.temp).trim()) vParts.push(`Temp ${String(vitalsObj.temp).trim()}${/°|c/i.test(vitalsObj.temp) ? '' : '°C'}`);
@@ -244,7 +253,12 @@ function formatTreatmentNoteXml(data) {
 
   // 1. Demographics
   const demo = [];
-  if (data.age) demo.push(`${data.age} year old ${data.gender ? data.gender.toLowerCase() : 'patient'}`);
+  if (data.age) {
+    const isMonths = (data.age_unit || '').toLowerCase() === 'months' || /month/i.test(String(data.age));
+    const ageUnit = isMonths ? 'month' : 'year';
+    const cleanAge = String(data.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim() || data.age;
+    demo.push(`${cleanAge} ${ageUnit} old ${data.gender ? data.gender.toLowerCase() : 'patient'}`);
+  }
   if (data.rvd_status) demo.push(data.rvd_status);
   if (demo.length > 0) {
     pList.push(makeP([{ text: demo.join(', ') }], 0, 30));
@@ -276,6 +290,10 @@ function formatTreatmentNoteXml(data) {
   const vitalsObj = data.vitals_recorded || data.vitals || {};
   const vParts = [];
   if (vitalsObj && typeof vitalsObj === 'object') {
+    if (vitalsObj.cwt && String(vitalsObj.cwt).trim()) vParts.push(`Wt ${String(vitalsObj.cwt).trim()}${/kg/i.test(vitalsObj.cwt) ? '' : ' kg'}`);
+    else if (vitalsObj.weight && String(vitalsObj.weight).trim()) vParts.push(`Wt ${String(vitalsObj.weight).trim()}${/kg/i.test(vitalsObj.weight) ? '' : ' kg'}`);
+    if (vitalsObj.ht && String(vitalsObj.ht).trim()) vParts.push(`Ht ${String(vitalsObj.ht).trim()}${/cm|m/i.test(vitalsObj.ht) ? '' : ' cm'}`);
+    else if (vitalsObj.height && String(vitalsObj.height).trim()) vParts.push(`Ht ${String(vitalsObj.height).trim()}${/cm|m/i.test(vitalsObj.height) ? '' : ' cm'}`);
     if (vitalsObj.bp && String(vitalsObj.bp).trim()) vParts.push(`BP ${String(vitalsObj.bp).trim()}${/mm\s*hg/i.test(vitalsObj.bp) ? '' : ' mmHg'}`);
     if (vitalsObj.hr && String(vitalsObj.hr).trim()) vParts.push(`HR ${String(vitalsObj.hr).trim()}${/bpm/i.test(vitalsObj.hr) ? '' : ' bpm'}`);
     if (vitalsObj.temp && String(vitalsObj.temp).trim()) vParts.push(`Temp ${String(vitalsObj.temp).trim()}${/°|c/i.test(vitalsObj.temp) ? '' : '°C'}`);
@@ -1106,6 +1124,10 @@ router.get('/:id/export/docx', async (req, res) => {
       const vitalsObj = rawData.vitals_recorded || rawData.vitals || {};
       const vParts = [];
       if (vitalsObj && typeof vitalsObj === 'object') {
+        if (vitalsObj.cwt && String(vitalsObj.cwt).trim()) vParts.push(`Wt ${String(vitalsObj.cwt).trim()}${/kg/i.test(vitalsObj.cwt) ? '' : ' kg'}`);
+        else if (vitalsObj.weight && String(vitalsObj.weight).trim()) vParts.push(`Wt ${String(vitalsObj.weight).trim()}${/kg/i.test(vitalsObj.weight) ? '' : ' kg'}`);
+        if (vitalsObj.ht && String(vitalsObj.ht).trim()) vParts.push(`Ht ${String(vitalsObj.ht).trim()}${/cm|m/i.test(vitalsObj.ht) ? '' : ' cm'}`);
+        else if (vitalsObj.height && String(vitalsObj.height).trim()) vParts.push(`Ht ${String(vitalsObj.height).trim()}${/cm|m/i.test(vitalsObj.height) ? '' : ' cm'}`);
         if (vitalsObj.bp) vParts.push(`BP ${vitalsObj.bp}${/mm\s*hg/i.test(vitalsObj.bp) ? '' : ' mmHg'}`);
         if (vitalsObj.hr) vParts.push(`HR ${vitalsObj.hr}${/bpm/i.test(vitalsObj.hr) ? '' : ' bpm'}`);
         if (vitalsObj.temp) vParts.push(`Temp ${vitalsObj.temp}${/°|c/i.test(vitalsObj.temp) ? '' : '°C'}`);
@@ -1131,6 +1153,12 @@ router.get('/:id/export/docx', async (req, res) => {
         doctor_name: rawData.doctor_name || note.doctor_name || 'Medical Officer',
         signature: rawData.signature || rawData.doctor_name || note.doctor_name || 'DOCTOR',
         bed_no: rawData.bed_no || 'TB Ward',
+        age: rawData.age ? `${String(rawData.age).replace(/\s*(years?|months?|yrs?|mos?)\b/gi, '').trim()} ${rawData.age_unit || (/month/i.test(String(rawData.age)) ? 'months' : 'years')}` : (note.age || ''),
+        age_unit: rawData.age_unit || (/month/i.test(String(rawData.age)) ? 'months' : 'years'),
+        cwt: vitalsObj.cwt || vitalsObj.weight || '',
+        weight: vitalsObj.cwt || vitalsObj.weight || '',
+        ht: vitalsObj.ht || vitalsObj.height || '',
+        height: vitalsObj.ht || vitalsObj.height || '',
         treatment_note: treatmentText,
         treatment_text: treatmentText,
         treatment_note_xml: treatmentXml,
