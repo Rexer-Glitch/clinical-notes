@@ -5,6 +5,7 @@ import {
   LayoutTemplate, Layers, X, FileText, Stethoscope, RotateCcw
 } from 'lucide-react';
 import { api } from '../services/api';
+import PediatricDosingSearchableDropdown from '../components/PediatricDosingSearchableDropdown';
 
 const STANDARD_EXAMINATION_SYSTEMS = [
   { id: 'general', label: 'General Exam & JACCOLD', placeholder: 'Alert, no distress. JACCOLD: pallor, jaundice, cyanosis, clubbing, edema, lymphadenopathy' },
@@ -835,6 +836,21 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
     }
   };
 
+  // Add Pediatric Pink Book Preset Medication to MAR and Plan
+  const handleSelectPinkBookPreset = ({ drug, dose, route, frequency, indication, isStat }) => {
+    if (!hasWeight) {
+      alert('Please enter current weight (cwt in kg) in the vitals section first.');
+      return;
+    }
+    if (isStat) {
+      handleAddStatMed(drug, dose, route, 'Stat');
+      appendToPlan(`${drug} ${dose} ${route} Stat${indication ? ` for ${indication}` : ''}`);
+    } else {
+      handleAddQuickMed(drug, dose, route, frequency, `${indication || 'Pediatric Pink Book'} (${currentWeightKg}kg)`);
+      appendToPlan(`${drug} ${dose} ${route} ${frequency}${indication ? ` for ${indication}` : ''}`);
+    }
+  };
+
   // Clinical Vitals Alert Evaluation
   const hrNum = parseInt(vitals.hr, 10);
   const tempNum = parseFloat(vitals.temp);
@@ -1322,16 +1338,18 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                 )}
               </div>
 
-              {!hasWeight ? (
-                <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+              {!hasWeight && (
+                <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5 mb-3">
                   <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                   <div>
                     <p className="font-bold">Weight required for pediatric calculations</p>
                     <p className="text-[11px] text-amber-800">Please enter current weight (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded">cwt</code> in kg) in the vitals section above to automatically calculate Holliday-Segar maintenance fluids, resuscitation boluses, and weight-based medication doses.</p>
                   </div>
                 </div>
-              ) : (
-                <div className="space-y-3">
+              )}
+
+              {hasWeight && (
+                <div className="space-y-3 mb-3">
                   {/* Holliday-Segar Maintenance Fluids */}
                   <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
@@ -1530,6 +1548,15 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                   </div>
                 </div>
               )}
+
+              {/* Pink Book Pediatric Medication Library */}
+              <PediatricDosingSearchableDropdown
+                weightKg={currentWeightKg}
+                age={formData.age}
+                ageUnit={formData.age_unit}
+                onSelectPreset={handleSelectPinkBookPreset}
+                compact={false}
+              />
             </div>
           )}
 
@@ -1968,6 +1995,19 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                   </>
                 )}
               </div>
+
+              {/* Pediatric Pink Book Presets Search in MAR Drug Sheet */}
+              {isPediatric && (
+                <div className="mt-2.5">
+                  <PediatricDosingSearchableDropdown
+                    weightKg={currentWeightKg}
+                    age={formData.age}
+                    ageUnit={formData.age_unit}
+                    onSelectPreset={handleSelectPinkBookPreset}
+                    compact={true}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Regular Medications List */}
