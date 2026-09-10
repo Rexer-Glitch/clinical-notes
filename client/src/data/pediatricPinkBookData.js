@@ -1825,6 +1825,85 @@ export const PINK_BOOK_MEDICATIONS = [
     }
   },
   {
+    id: 'ors-watery-stool',
+    name: 'ORS (for watery stool - 10ml/kg)',
+    genericName: 'Oral Rehydration Salts',
+    aliases: ['ORS diarrhea', 'ORS loose stool', 'Watery stool replacement'],
+    category: 'GI & Fluids',
+    indication: 'Ongoing fluid replacement after each loose / watery stool',
+    route: 'PO',
+    frequency: 'PRN',
+    isStat: false,
+    forms: 'Standard WHO-UNICEF low osmolarity sachet dissolved in 1L clean water',
+    dosePerKg: 10,
+    unit: 'ml',
+    maxDose: 500,
+    notes: 'Give 10 ml/kg PO after each loose/watery stool to prevent dehydration.',
+    calc: (wt) => {
+      const ml = Math.round(wt * 10);
+      const str = `${ml} ml`;
+      return {
+        formattedDose: str,
+        formulaDisplay: '(10ml/kg per stool)',
+        fullDoseString: `${str} (10ml/kg) PO per watery stool`,
+        route: 'PO',
+        frequency: 'PRN'
+      };
+    }
+  },
+  {
+    id: 'ors-vomitus',
+    name: 'ORS (for vomitus - 2ml/kg)',
+    genericName: 'Oral Rehydration Salts',
+    aliases: ['ORS vomitus', 'ORS vomiting', 'Vomitus replacement'],
+    category: 'GI & Fluids',
+    indication: 'Fluid replacement after each episode of vomitus',
+    route: 'PO',
+    frequency: 'PRN',
+    isStat: false,
+    forms: 'Standard WHO-UNICEF low osmolarity sachet dissolved in 1L clean water',
+    dosePerKg: 2,
+    unit: 'ml',
+    maxDose: 200,
+    notes: 'Give 2 ml/kg PO slowly with a spoon after each episode of vomiting.',
+    calc: (wt) => {
+      const ml = Math.round(wt * 2);
+      const str = `${ml} ml`;
+      return {
+        formattedDose: str,
+        formulaDisplay: '(2ml/kg per vomitus)',
+        fullDoseString: `${str} (2ml/kg) PO per vomitus`,
+        route: 'PO',
+        frequency: 'PRN'
+      };
+    }
+  },
+  {
+    id: 'zinc-sulfate-20mg',
+    name: 'Zinc Sulfate 20mg',
+    genericName: 'Zinc sulfate dispersible',
+    aliases: ['Zinc 20mg', 'Zinconia 20mg'],
+    category: 'GI & Fluids',
+    indication: 'Acute / persistent diarrhea x 14 days',
+    route: 'PO',
+    frequency: 'OD',
+    isStat: false,
+    forms: '20mg dispersible tablet',
+    dosePerKg: 0,
+    unit: 'mg',
+    maxDose: 20,
+    notes: '20 mg PO OD x 14 days. Dissolve in small amount of breastmilk or clean water/ORS.',
+    calc: () => {
+      return {
+        formattedDose: '20mg',
+        formulaDisplay: '(20mg OD x 14d)',
+        fullDoseString: '20mg PO OD x 14 days',
+        route: 'PO',
+        frequency: 'OD'
+      };
+    }
+  },
+  {
     id: 'zinc-sulfate',
     name: 'Zinc Sulfate',
     genericName: 'Zinc sulfate dispersible',

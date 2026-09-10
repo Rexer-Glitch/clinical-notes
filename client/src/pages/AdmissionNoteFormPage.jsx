@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Save, ArrowLeft, Plus, Trash2, Sparkles, Eye, Pill, 
   Activity, AlertTriangle, Check, ShieldAlert, Heart, Wind, HelpCircle,
-  LayoutTemplate, Layers, X, FileText, Stethoscope, RotateCcw
+  LayoutTemplate, Layers, X, FileText, Stethoscope, RotateCcw,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { api } from '../services/api';
 import PediatricDosingSearchableDropdown from '../components/PediatricDosingSearchableDropdown';
@@ -29,6 +30,7 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
   const [selectedDesignFilename, setSelectedDesignFilename] = useState('');
   const [activeExamSystems, setActiveExamSystems] = useState(['general', 'cvs', 'respiratory', 'abdomen', 'msk']);
   const [customExamSystems, setCustomExamSystems] = useState([]);
+  const [isPediatricCalculatorOpen, setIsPediatricCalculatorOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     hospital_name: 'Gumare Primary Hospital',
@@ -1308,255 +1310,229 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
 
           {/* Pediatric Weight-Based Fluids & Medication Engine */}
           {isPediatric && (
-            <div className="bg-linear-to-br from-emerald-50 via-teal-50 to-blue-50 p-4 sm:p-5 rounded-2xl border-2 border-emerald-500/50 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-2xs">
+            <div className="bg-gradient-to-br from-emerald-50 via-teal-50/60 to-blue-50/40 p-3.5 sm:p-4 rounded-2xl border-2 border-emerald-500/40 shadow-xs transition-all">
+              {/* Collapsible Dropdown Header */}
+              <div 
+                onClick={() => setIsPediatricCalculatorOpen(!isPediatricCalculatorOpen)}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer select-none ${
+                  isPediatricCalculatorOpen ? 'border-b border-emerald-200/70 pb-3 mb-3.5' : ''
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs shrink-0">
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-tight flex items-center gap-1.5">
+                    <h4 className="font-bold text-xs sm:text-sm text-emerald-950 uppercase tracking-tight flex items-center gap-2">
                       Pediatric Dosing & Fluid Calculator
                       <span className="text-[10px] bg-emerald-200/80 text-emerald-900 font-bold px-2 py-0.5 rounded-full">
                         {formData.age ? `${formData.age} ${formData.age_unit || 'years'}` : 'Pediatric'}
                       </span>
                     </h4>
                     <p className="text-[11px] text-emerald-800">
-                      Populates exact weight-based quantities into MAR Drug Sheet and Management Plan
+                      {isPediatricCalculatorOpen 
+                        ? 'Populates exact weight-based quantities into MAR Drug Sheet and Management Plan'
+                        : (hasWeight 
+                            ? `Holliday-Segar fluids (${hsDailyMl}ml/day, ${hsHourlyRate}ml/hr) • Click to open calculator & presets`
+                            : 'Click to open fluids & weight-based dosing library'
+                          )
+                      }
                     </p>
                   </div>
                 </div>
-                {hasWeight ? (
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 shadow-2xs self-start sm:self-auto">
-                    <span>cwt:</span>
-                    <span className="font-mono text-sm text-emerald-700">{currentWeightKg} kg</span>
-                  </div>
-                ) : (
-                  <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 border border-amber-300 rounded-xl text-[11px] font-bold text-amber-900 self-start sm:self-auto">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-700" /> Enter weight (cwt) in vitals
-                  </div>
-                )}
+
+                <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                  {hasWeight ? (
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 shadow-2xs">
+                      <span>cwt:</span>
+                      <span className="font-mono text-emerald-700">{currentWeightKg} kg</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 border border-amber-300 rounded-xl text-[11px] font-bold text-amber-900">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700" /> Enter cwt
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsPediatricCalculatorOpen(!isPediatricCalculatorOpen);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-2xs transition cursor-pointer"
+                  >
+                    <span>{isPediatricCalculatorOpen ? 'Collapse' : 'Open Calculator'}</span>
+                    {isPediatricCalculatorOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
-              {!hasWeight && (
-                <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5 mb-3">
-                  <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                  <div>
-                    <p className="font-bold">Weight required for pediatric calculations</p>
-                    <p className="text-[11px] text-amber-800">Please enter current weight (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded">cwt</code> in kg) in the vitals section above to automatically calculate Holliday-Segar maintenance fluids, resuscitation boluses, and weight-based medication doses.</p>
-                  </div>
-                </div>
-              )}
-
-              {hasWeight && (
-                <div className="space-y-3 mb-3">
-                  {/* Holliday-Segar Maintenance Fluids */}
-                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+              {/* Collapsible Dropdown Content */}
+              {isPediatricCalculatorOpen && (
+                <div className="space-y-3.5">
+                  {!hasWeight && (
+                    <div className="p-3 bg-white/80 rounded-xl border border-amber-200 text-xs text-amber-900 flex items-center gap-2.5">
+                      <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                       <div>
-                        <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5 text-emerald-600" />
-                          Holliday-Segar Maintenance IV Fluids ({currentWeightKg} kg)
-                        </span>
-                        <p className="text-[11px] text-slate-600 font-mono mt-0.5">
-                          24-hr Total: <strong className="text-emerald-900">{hsDailyMl} ml/day</strong> &bull; Rate: <strong className="text-emerald-900">{hsHourlyRate} ml/hr</strong> (4-2-1 rule)
-                        </p>
+                        <p className="font-bold">Weight required for pediatric calculations</p>
+                        <p className="text-[11px] text-amber-800">Please enter current weight (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded">cwt</code> in kg) in the vitals section above to automatically calculate Holliday-Segar maintenance fluids, resuscitation boluses, and weight-based medication doses.</p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={handleAddPediatricMaintenanceFluid}
-                        className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-2xs transition flex items-center gap-1 shrink-0 self-start sm:self-auto cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Add Maintenance Fluid (to MAR & Plan)
-                      </button>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Resuscitation Fluid Boluses */}
-                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
-                        Resuscitation Fluid Boluses (0.9% Normal Saline / Ringers Lactate)
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricFluidBolus(10)}
-                        className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-teal-700" /> 10 ml/kg Bolus ({bolus10Ml} ml stat)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricFluidBolus(20)}
-                        className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-teal-700" /> 20 ml/kg Shock Bolus ({bolus20Ml} ml stat)
-                      </button>
-                    </div>
-                  </div>
+                  {hasWeight && (
+                    <>
+                      {/* Holliday-Segar Maintenance Fluids */}
+                      <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                          <div>
+                            <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                              <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                              Holliday-Segar Maintenance IV Fluids ({currentWeightKg} kg)
+                            </span>
+                            <p className="text-[11px] text-slate-600 font-mono mt-0.5">
+                              24-hr Total: <strong className="text-emerald-900">{hsDailyMl} ml/day</strong> &bull; Rate: <strong className="text-emerald-900">{hsHourlyRate} ml/hr</strong> (4-2-1 rule)
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddPediatricMaintenanceFluid}
+                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-2xs transition flex items-center gap-1 shrink-0 self-start sm:self-auto cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Add Maintenance Fluid (to MAR & Plan)
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Weight-Based Common Pediatric Medications */}
-                  <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
-                        Weight-Based Medication Presets (Click to add to MAR & Plan)
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        Based on {currentWeightKg} kg
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Paracetamol',
-                          dosePerKg: 15,
-                          unit: 'mg',
-                          route: 'PO',
-                          frequency: 'TDS',
-                          indication: 'Analgesia / Fever',
-                          maxDose: 1000
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Paracetamol {Math.round(currentWeightKg * 15)}mg (15mg/kg) PO TDS
-                      </button>
+                      {/* Resuscitation Fluid Boluses */}
+                      <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                            Resuscitation Fluid Boluses (0.9% Normal Saline / Ringers Lactate)
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleAddPediatricFluidBolus(10)}
+                            className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-teal-700" /> 10 ml/kg Bolus ({bolus10Ml} ml stat)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPediatricFluidBolus(20)}
+                            className="text-xs bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-semibold px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-teal-700" /> 20 ml/kg Shock Bolus ({bolus20Ml} ml stat)
+                          </button>
+                        </div>
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Ceftriaxone',
-                          dosePerKg: 50,
-                          unit: 'mg',
-                          route: 'IV',
-                          frequency: 'OD',
-                          indication: 'Severe bacterial infection',
-                          maxDose: 2000
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Ceftriaxone {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV OD
-                      </button>
+                      {/* Weight-Based Medication Presets */}
+                      <div className="bg-white/90 p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-bold text-slate-800 uppercase tracking-wide">
+                            Weight-Based Medication Presets (Click to add to MAR & Plan)
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Based on {currentWeightKg} kg
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAddPediatricWeightMed({
+                              drug: 'Paracetamol',
+                              dosePerKg: 15,
+                              unit: 'mg',
+                              route: 'PO',
+                              frequency: 'TDS',
+                              indication: 'Analgesia / Fever',
+                              maxDose: 1000
+                            })}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + Paracetamol {Math.round(currentWeightKg * 15)}mg (15mg/kg) PO TDS
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Cefotaxime',
-                          dosePerKg: 50,
-                          unit: 'mg',
-                          route: 'IV',
-                          frequency: 'TDS',
-                          indication: 'Neonatal/Pediatric sepsis',
-                          maxDose: 2000
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Cefotaxime {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV TDS
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddPediatricWeightMed({
+                              drug: 'Ibuprofen',
+                              dosePerKg: 10,
+                              unit: 'mg',
+                              route: 'PO',
+                              frequency: 'TDS',
+                              indication: 'Anti-inflammatory / Pain',
+                              maxDose: 400
+                            })}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + Ibuprofen {Math.round(currentWeightKg * 10)}mg (10mg/kg) PO TDS
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Ampicillin',
-                          dosePerKg: 50,
-                          unit: 'mg',
-                          route: 'IV',
-                          frequency: 'QID',
-                          indication: 'Bacterial coverage / Listeria',
-                          maxDose: 2000
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Ampicillin {Math.round(currentWeightKg * 50)}mg (50mg/kg) IV QID
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAddQuickMed('Zinc Sulfate', '20mg', 'PO', 'OD', 'Diarrhea / Gastroenteritis x 14 days');
+                              appendToPlan('Zinc Sulfate 20mg PO OD for 14 days');
+                            }}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + Zinc Sulfate 20mg OD (14 days)
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Gentamicin',
-                          dosePerKg: 7.5,
-                          unit: 'mg',
-                          route: 'IV',
-                          frequency: 'OD',
-                          indication: 'Gram-negative coverage'
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Gentamicin {Number((currentWeightKg * 7.5).toFixed(1))}mg (7.5mg/kg) IV OD
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const orsStool = Math.round(currentWeightKg * 10);
+                              handleAddQuickMed('ORS (for watery stool)', `${orsStool} ml (10ml/kg)`, 'PO', 'PRN', 'Per loose/watery stool');
+                              appendToPlan(`Oral Rehydration Solution (ORS) ${orsStool}ml (10ml/kg) PO after each watery stool`);
+                            }}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + ORS 10ml/kg ({Math.round(currentWeightKg * 10)}ml) per watery stool
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Ibuprofen',
-                          dosePerKg: 10,
-                          unit: 'mg',
-                          route: 'PO',
-                          frequency: 'TDS',
-                          indication: 'Anti-inflammatory / Pain',
-                          maxDose: 400
-                        })}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Ibuprofen {Math.round(currentWeightKg * 10)}mg (10mg/kg) PO TDS
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const orsVomit = Math.round(currentWeightKg * 2);
+                              handleAddQuickMed('ORS (for vomitus)', `${orsVomit} ml (2ml/kg)`, 'PO', 'PRN', 'Per vomitus episode');
+                              appendToPlan(`Oral Rehydration Solution (ORS) ${orsVomit}ml (2ml/kg) PO after each episode of vomitus`);
+                            }}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + ORS 2ml/kg ({Math.round(currentWeightKg * 2)}ml) per vomitus
+                          </button>
 
-                      <button
-                        type="button"
-                        onClick={() => handleAddPediatricWeightMed({
-                          drug: 'Diazepam',
-                          dosePerKg: 0.3,
-                          unit: 'mg',
-                          route: 'IV',
-                          frequency: 'STAT',
-                          indication: 'Convulsion / Status epilepticus',
-                          maxDose: 10,
-                          isStat: true
-                        })}
-                        className="text-xs bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Diazepam {Number((currentWeightKg * 0.3).toFixed(1))}mg (0.3mg/kg) IV Stat
-                      </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const orsMl = Math.round(currentWeightKg * 75);
+                              handleAddQuickMed('ORS (Plan B)', `${orsMl} ml`, 'PO', 'PRN', 'Dehydration over 4 hours');
+                              appendToPlan(`Oral Rehydration Solution (ORS) ${orsMl}ml (75ml/kg) PO over 4 hours`);
+                            }}
+                            className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
+                          >
+                            + ORS Plan B {Math.round(currentWeightKg * 75)}ml (75ml/kg) PO
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const isUnder6Mo = formData.age_unit === 'months' && Number(formData.age) < 6;
-                          const zDose = isUnder6Mo ? '10mg' : '20mg';
-                          handleAddQuickMed('Zinc Sulfate', zDose, 'PO', 'OD', 'Diarrhea / Gastroenteritis x 14 days');
-                          appendToPlan(`Zinc Sulfate ${zDose} PO OD for 14 days`);
-                        }}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + Zinc Sulfate {formData.age_unit === 'months' && Number(formData.age) < 6 ? '10mg' : '20mg'} OD
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const orsMl = Math.round(currentWeightKg * 75);
-                          handleAddQuickMed('ORS (Plan B)', `${orsMl} ml`, 'PO', 'PRN', 'Dehydration over 4 hours');
-                          appendToPlan(`Oral Rehydration Solution (ORS) ${orsMl}ml (75ml/kg) PO over 4 hours`);
-                        }}
-                        className="text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-lg font-medium transition cursor-pointer"
-                      >
-                        + ORS Plan B {Math.round(currentWeightKg * 75)}ml (75ml/kg) PO
-                      </button>
-                    </div>
-                  </div>
+                  {/* Pink Book Pediatric Medication Library */}
+                  <PediatricDosingSearchableDropdown
+                    weightKg={currentWeightKg}
+                    age={formData.age}
+                    ageUnit={formData.age_unit}
+                    onSelectPreset={handleSelectPinkBookPreset}
+                    compact={false}
+                  />
                 </div>
               )}
-
-              {/* Pink Book Pediatric Medication Library */}
-              <PediatricDosingSearchableDropdown
-                weightKg={currentWeightKg}
-                age={formData.age}
-                ageUnit={formData.age_unit}
-                onSelectPreset={handleSelectPinkBookPreset}
-                compact={false}
-              />
             </div>
           )}
 
@@ -1898,61 +1874,49 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
                     <button
                       type="button"
                       onClick={() => handleAddPediatricWeightMed({
-                        drug: 'Ceftriaxone',
-                        dosePerKg: 50,
+                        drug: 'Ibuprofen',
+                        dosePerKg: 10,
                         unit: 'mg',
-                        route: 'IV',
-                        frequency: 'OD',
-                        indication: 'Severe infection',
-                        maxDose: 2000
-                      })}
-                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
-                    >
-                      + Ceftriaxone {Math.round(currentWeightKg * 50)}mg (50mg/kg) OD
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleAddPediatricWeightMed({
-                        drug: 'Cefotaxime',
-                        dosePerKg: 50,
-                        unit: 'mg',
-                        route: 'IV',
+                        route: 'PO',
                         frequency: 'TDS',
-                        indication: 'Bacterial coverage',
-                        maxDose: 2000
+                        indication: 'Anti-inflammatory / Pain',
+                        maxDose: 400
                       })}
                       className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
                     >
-                      + Cefotaxime {Math.round(currentWeightKg * 50)}mg (50mg/kg) TDS
+                      + Ibuprofen {Math.round(currentWeightKg * 10)}mg (10mg/kg) TDS
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleAddPediatricWeightMed({
-                        drug: 'Gentamicin',
-                        dosePerKg: 7.5,
-                        unit: 'mg',
-                        route: 'IV',
-                        frequency: 'OD',
-                        indication: 'Gram-negative coverage'
-                      })}
+                      onClick={() => {
+                        handleAddQuickMed('Zinc Sulfate', '20mg', 'PO', 'OD', 'Diarrhea / Gastroenteritis x 14 days');
+                        appendToPlan('Zinc Sulfate 20mg PO OD for 14 days');
+                      }}
                       className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
                     >
-                      + Gentamicin {Number((currentWeightKg * 7.5).toFixed(1))}mg (7.5mg/kg) OD
+                      + Zinc Sulfate 20mg OD
                     </button>
                     <button
                       type="button"
-                      onClick={() => handleAddPediatricWeightMed({
-                        drug: 'Ampicillin',
-                        dosePerKg: 50,
-                        unit: 'mg',
-                        route: 'IV',
-                        frequency: 'QID',
-                        indication: 'Bacterial coverage',
-                        maxDose: 2000
-                      })}
+                      onClick={() => {
+                        const orsStool = Math.round(currentWeightKg * 10);
+                        handleAddQuickMed('ORS (for watery stool)', `${orsStool} ml (10ml/kg)`, 'PO', 'PRN', 'Per loose/watery stool');
+                        appendToPlan(`Oral Rehydration Solution (ORS) ${orsStool}ml (10ml/kg) PO after each watery stool`);
+                      }}
                       className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
                     >
-                      + Ampicillin {Math.round(currentWeightKg * 50)}mg QID
+                      + ORS 10ml/kg ({Math.round(currentWeightKg * 10)}ml) watery stool
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const orsVomit = Math.round(currentWeightKg * 2);
+                        handleAddQuickMed('ORS (for vomitus)', `${orsVomit} ml (2ml/kg)`, 'PO', 'PRN', 'Per vomitus episode');
+                        appendToPlan(`Oral Rehydration Solution (ORS) ${orsVomit}ml (2ml/kg) PO after each episode of vomitus`);
+                      }}
+                      className="text-[11px] bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-lg font-medium cursor-pointer"
+                    >
+                      + ORS 2ml/kg ({Math.round(currentWeightKg * 2)}ml) vomitus
                     </button>
                   </>
                 ) : (
