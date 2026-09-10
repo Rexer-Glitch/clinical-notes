@@ -49,20 +49,32 @@ async function request(endpoint, options = {}) {
     headers
   });
 
+  let text = '';
+  let data = null;
+  try {
+    text = await response.text();
+    data = JSON.parse(text);
+  } catch (e) {
+    data = null;
+  }
+
   if (!response.ok) {
     let errorMsg = 'An error occurred';
-    try {
-      const errJson = await response.json();
-      errorMsg = errJson.error || errorMsg;
-    } catch (e) {
-      errorMsg = await response.text();
+    if (data && data.error) {
+      errorMsg = data.error;
+    } else if (response.status === 404) {
+      errorMsg = 'Backend API endpoint not found (404). If running on Vercel, please set VITE_API_URL to your live backend server (e.g. on Render).';
+    } else if (text && text.length < 200 && !text.includes('<!DOCTYPE')) {
+      errorMsg = text;
+    } else {
+      errorMsg = `Server error (${response.status}): ${response.statusText || 'Unable to connect to backend'}`;
     }
     throw new Error(errorMsg);
   }
 
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('application/json')) {
-    return await response.json();
+    return data !== null ? data : {};
   }
   return response;
 }
