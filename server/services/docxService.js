@@ -463,6 +463,24 @@ function renderDocx(templateFilename, data) {
     templatePath = path.join(UPLOADS_DIR, templateFilename);
   }
 
+  // If missing from disk, attempt immediate synchronous reconstruction from seed_templates.json
+  if (!fs.existsSync(templatePath)) {
+    try {
+      const seedPath = path.join(__dirname, '..', 'seed_templates.json');
+      if (fs.existsSync(seedPath)) {
+        const seedTemplates = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        const seed = seedTemplates.find(s => s.filename === path.basename(templateFilename) || s.name === path.basename(templateFilename));
+        if (seed && seed.docx_base64) {
+          const targetUpload = path.join(UPLOADS_DIR, path.basename(templateFilename));
+          fs.writeFileSync(targetUpload, Buffer.from(seed.docx_base64, 'base64'));
+          templatePath = targetUpload;
+        }
+      }
+    } catch (e) {
+      console.warn('Sync seed docx restore error:', e.message);
+    }
+  }
+
   if (!fs.existsSync(templatePath)) {
     throw new Error(`Template file "${templateFilename}" not found`);
   }
@@ -894,9 +912,74 @@ async function generateCustomDocxTemplate(type, targetPath, options = {}) {
   }
 }
 
+/**
+ * Ensure a requested template file exists on disk, reconstructing it from database or seed if missing
+ */
+async function ensureTemplateFileOnDisk(templateFilename) {
+  if (!templateFilename) return null;
+  const basename = path.basename(templateFilename);
+  const templatePath = path.join(TEMPLATES_DIR, basename);
+  if (fs.existsSync(templatePath)) return templatePath;
+
+  const uploadPath = path.join(UPLOADS_DIR, basename);
+  if (fs.existsSync(uploadPath)) return uploadPath;
+
+  // 1. Try restoring from seed_templates.json
+  const seedPath = path.join(__dirname, '..', 'seed_templates.json');
+  if (fs.existsSync(seedPath)) {
+    try {
+      const seedContent = fs.readFileSync(seedPath, 'utf8');
+      const seedTemplates = JSON.parse(seedContent);
+      const seed = seedTemplates.find(s => s.filename === basename || s.name === basename);
+      if (seed && seed.docx_base64) {
+        fs.writeFileSync(uploadPath, Buffer.from(seed.docx_base64, 'base64'));
+        return uploadPath;
+      }
+    } catch (e) {}
+  }
+
+  // 2. Try looking up in SQLite
+  try {
+    const { db, ready } = require('../db');
+    await ready;
+    const tpl = await db.get('SELECT * FROM templates WHERE filename = ? OR name = ?', [basename, basename]);
+    if (tpl) {
+      if (tpl.docx_base64) {
+        fs.writeFileSync(uploadPath, Buffer.from(tpl.docx_base64, 'base64'));
+        return uploadPath;
+      }
+      let defData = {};
+      try { defData = JSON.parse(tpl.default_data_json || '{}'); } catch (e) {}
+      if (defData.layout_config && Object.keys(defData.layout_config).length > 0) {
+        await generateCustomDocxTemplate(tpl.type || 'admission', uploadPath, {
+          title: tpl.name,
+          layoutConfig: defData.layout_config
+        });
+        return uploadPath;
+      }
+      if (defData.design_filename) {
+        await generateCustomDocxTemplate(tpl.type || 'admission', uploadPath, {
+          title: tpl.name,
+          designFilename: defData.design_filename
+        });
+        return uploadPath;
+      }
+      await generateCustomDocxTemplate(tpl.type || 'admission', uploadPath, {
+        title: tpl.name
+      });
+      return uploadPath;
+    }
+  } catch (e) {
+    console.warn('DB template reconstruction error:', e.message);
+  }
+
+  return null;
+}
+
 module.exports = {
   ensureDefaultTemplates,
   generateCustomDocxTemplate,
+  ensureTemplateFileOnDisk,
   renderDocx,
   TEMPLATES_DIR,
   UPLOADS_DIR

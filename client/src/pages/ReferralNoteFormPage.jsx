@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Save, Eye, Share2, AlertCircle, Sparkles, LayoutTemplate, Plus, Layers, Stethoscope, FileText, Check } from 'lucide-react';
+import { ArrowLeft, Save, Eye, Share2, AlertCircle, Sparkles, LayoutTemplate, Plus, Layers, Stethoscope, FileText, Check, BookmarkPlus } from 'lucide-react';
 import { api } from '../services/api';
 
 export default function ReferralNoteFormPage({ noteId, initialTemplateId, setView, onOpenViewModal, onOpenAiModal }) {
@@ -266,6 +266,44 @@ Discussed case with Dr Bose (NRH General Surgeon) who accepted the patient.`,
     }
   };
 
+  const handleSaveAsTemplate = async () => {
+    const defaultName = formData.diagnosis ? `Referral - ${formData.diagnosis}` : 'Custom Referral Template';
+    const tplName = window.prompt('Enter a name for this reusable referral template:', defaultName);
+    if (!tplName || !tplName.trim()) return;
+
+    try {
+      const res = await api.templates.createCustom({
+        name: tplName.trim(),
+        type: 'referral',
+        description: `Custom referral template created from clinical transfer (${formData.diagnosis || 'Referral'})`,
+        design_filename: selectedDesignFilename || 'referral_and_report_form_template.docx',
+        default_data: {
+          design_filename: selectedDesignFilename || 'referral_and_report_form_template.docx',
+          hospital_name: formData.hospital_name || 'Gumare Primary Hospital',
+          referring_unit: formData.referring_unit || '',
+          receiving_hospital: formData.receiving_hospital || '',
+          receiving_department: formData.receiving_department || '',
+          urgency: formData.urgency || 'Routine',
+          diagnosis: formData.diagnosis || '',
+          reason_for_referral: formData.reason_for_referral || '',
+          clinical_history: formData.clinical_history || '',
+          examination: formData.examination || '',
+          transport_needs: formData.transport_needs || ''
+        }
+      });
+
+      const resTpls = await api.templates.list('referral');
+      const updatedTpls = resTpls.templates || [];
+      setTemplates(updatedTpls);
+      if (res && res.template) {
+        setSelectedTemplateId(res.template.id);
+      }
+      alert(`✓ Referral template "${tplName}" saved and backed up in browser & cloud!`);
+    } catch (err) {
+      alert('Failed to save template: ' + err.message);
+    }
+  };
+
   return (
     <div className="space-y-6 pb-28">
       
@@ -292,6 +330,16 @@ Discussed case with Dr Bose (NRH General Surgeon) who accepted the patient.`,
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSaveAsTemplate}
+            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+            title="Save current referral details as a reusable template"
+          >
+            <BookmarkPlus className="w-4 h-4" />
+            <span>Save as Template</span>
+          </button>
+
           <button
             type="button"
             onClick={() => handleSave(true)}

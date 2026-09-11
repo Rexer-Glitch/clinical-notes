@@ -1,6 +1,6 @@
 const express = require('express');
 const { db, ready } = require('../db');
-const { renderDocx } = require('../services/docxService');
+const { renderDocx, ensureTemplateFileOnDisk } = require('../services/docxService');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -1272,6 +1272,7 @@ router.get('/:id/export/docx', async (req, res) => {
       };
     }
 
+    await ensureTemplateFileOnDisk(templateFile);
     const docxBuffer = renderDocx(templateFile, payload);
 
     const isDrugSheet = templateFile.toLowerCase().includes('drug') || exportType === 'drug_sheet' || exportType === 'drugsheet';

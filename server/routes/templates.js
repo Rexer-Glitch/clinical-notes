@@ -3,11 +3,34 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { db, ready } = require('../db');
-const { TEMPLATES_DIR, UPLOADS_DIR, generateCustomDocxTemplate } = require('../services/docxService');
+const { TEMPLATES_DIR, UPLOADS_DIR, generateCustomDocxTemplate, ensureTemplateFileOnDisk } = require('../services/docxService');
 const { inspectDocxFile } = require('../services/docxInspector');
 const { authenticateToken, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
+
+/**
+ * Keep server/seed_templates.json in sync with custom templates in SQLite
+ */
+async function syncSeedTemplatesFile() {
+  try {
+    const customTemplates = await db.all('SELECT * FROM templates WHERE is_default = 0');
+    const seeds = customTemplates.map(t => ({
+      name: t.name,
+      type: t.type,
+      description: t.description,
+      filename: t.filename,
+      schema_fields: t.schema_fields,
+      default_data_json: t.default_data_json,
+      is_default: 0,
+      docx_base64: t.docx_base64 || null
+    }));
+    const target = path.join(__dirname, '..', 'seed_templates.json');
+    fs.writeFileSync(target, JSON.stringify(seeds, null, 2));
+  } catch (err) {
+    console.warn('Could not update seed_templates.json:', err.message);
+  }
+}
 
 // Configure multer for docx template uploads
 const storage = multer.diskStorage({
@@ -154,22 +177,27 @@ router.post('/online-layout', optionalAuth, async (req, res) => {
       layoutConfig: layout_config || {}
     });
 
+    const docxBase64 = fs.existsSync(filePath) ? fs.readFileSync(filePath).toString('base64') : null;
+
     const parsedData = typeof default_data === 'object' ? { ...default_data } : JSON.parse(default_data || '{}');
     parsedData.layout_config = layout_config || {};
     parsedData.design_filename = filename;
     const defaultDataStr = JSON.stringify(parsedData);
 
     const result = await db.run(`
-      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, is_default)
-      VALUES (?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, docx_base64, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       name.trim(),
       normalizedType,
       description ? description.trim() : 'Custom online-designed document layout',
       filename,
       JSON.stringify(['patient_name', 'patient_surname', 'reg_no', 'ward', 'diagnosis', 'date', 'treatment_text', 'medications']),
-      defaultDataStr
+      defaultDataStr,
+      docxBase64
     ]);
+
+    await syncSeedTemplatesFile();
 
     const created = await db.get('SELECT * FROM templates WHERE id = ?', [result.lastID]);
     res.status(201).json({
@@ -230,6 +258,8 @@ router.post('/custom', optionalAuth, async (req, res) => {
       designFilename: design_filename
     });
 
+    const docxBase64 = fs.existsSync(filePath) ? fs.readFileSync(filePath).toString('base64') : null;
+
     const parsedData = typeof default_data === 'object' ? { ...default_data } : JSON.parse(default_data || '{}');
     if (design_filename) {
       parsedData.design_filename = design_filename;
@@ -237,16 +267,19 @@ router.post('/custom', optionalAuth, async (req, res) => {
     const defaultDataStr = JSON.stringify(parsedData);
 
     const result = await db.run(`
-      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, is_default)
-      VALUES (?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, docx_base64, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       name.trim(),
       normalizedType,
       description ? description.trim() : '',
       filename,
       JSON.stringify(['patient_name', 'patient_surname', 'reg_no', 'ward', 'diagnosis', 'date', 'treatment_text', 'medications']),
-      defaultDataStr
+      defaultDataStr,
+      docxBase64
     ]);
+
+    await syncSeedTemplatesFile();
 
     const created = await db.get('SELECT * FROM templates WHERE id = ?', [result.lastID]);
     res.status(201).json({
@@ -317,18 +350,22 @@ router.post('/upload', optionalAuth, upload.single('template_file'), async (req,
     }
 
     const defaultDataStr = typeof default_data === 'object' ? JSON.stringify(default_data) : (default_data || '{}');
+    const docxBase64 = req.file && fs.existsSync(req.file.path) ? fs.readFileSync(req.file.path).toString('base64') : null;
 
     const result = await db.run(`
-      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, is_default)
-      VALUES (?, ?, ?, ?, ?, ?, 0)
+      INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, docx_base64, is_default)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0)
     `, [
       name.trim(),
       type.trim(),
       description ? description.trim() : '',
       req.file.filename,
       schema_fields || JSON.stringify(['patient_name', 'diagnosis', 'date', 'medications']),
-      defaultDataStr
+      defaultDataStr,
+      docxBase64
     ]);
+
+    await syncSeedTemplatesFile();
 
     const created = await db.get('SELECT * FROM templates WHERE id = ?', [result.lastID]);
     res.status(201).json({
@@ -354,19 +391,91 @@ router.get('/:id/download', async (req, res) => {
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    let filePath = path.join(TEMPLATES_DIR, template.filename);
-    if (!fs.existsSync(filePath)) {
-      filePath = path.join(UPLOADS_DIR, template.filename);
-    }
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Template file not found on disk' });
+    const filePath = await ensureTemplateFileOnDisk(template.filename);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Template file not found and could not be reconstructed' });
     }
 
     res.download(filePath, template.filename);
   } catch (err) {
     console.error('Download template error:', err);
     res.status(500).json({ error: 'Failed to download template' });
+  }
+});
+
+// Bulk synchronize templates from client localStorage
+router.post('/sync', optionalAuth, async (req, res) => {
+  try {
+    await ready;
+    const { templates: clientTemplates } = req.body;
+    if (!Array.isArray(clientTemplates) || clientTemplates.length === 0) {
+      const current = await db.all('SELECT * FROM templates ORDER BY is_default DESC, id DESC');
+      return res.json({
+        templates: current.map(t => ({
+          ...t,
+          default_data: JSON.parse(t.default_data_json || '{}'),
+          schema_fields: JSON.parse(t.schema_fields || '[]')
+        }))
+      });
+    }
+
+    for (const ct of clientTemplates) {
+      if (!ct.name || !ct.name.trim()) continue;
+      const exists = await db.get('SELECT id, filename, docx_base64 FROM templates WHERE name = ? OR (filename IS NOT NULL AND filename = ?)', [ct.name.trim(), ct.filename]);
+      if (!exists) {
+        const normType = (ct.type || 'admission').toLowerCase().trim();
+        const filename = ct.filename || `custom-${normType}-${Date.now()}-${Math.round(Math.random() * 1e6)}.docx`;
+        const filePath = path.join(UPLOADS_DIR, filename);
+
+        const defData = typeof ct.default_data === 'object' ? { ...ct.default_data } : JSON.parse(ct.default_data_json || ct.default_data || '{}');
+        let docxBase64 = ct.docx_base64 || null;
+
+        if (docxBase64) {
+          try {
+            fs.writeFileSync(filePath, Buffer.from(docxBase64, 'base64'));
+          } catch (e) {}
+        } else {
+          await generateCustomDocxTemplate(normType, filePath, {
+            title: ct.name,
+            layoutConfig: defData.layout_config,
+            designFilename: defData.design_filename
+          });
+          if (fs.existsSync(filePath)) {
+            docxBase64 = fs.readFileSync(filePath).toString('base64');
+          }
+        }
+
+        await db.run(`
+          INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, docx_base64, is_default)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        `, [
+          ct.name.trim(),
+          normType,
+          ct.description ? ct.description.trim() : '',
+          filename,
+          JSON.stringify(ct.schema_fields || ['patient_name', 'patient_surname', 'reg_no', 'ward', 'diagnosis', 'date', 'treatment_text', 'medications']),
+          JSON.stringify(defData),
+          docxBase64
+        ]);
+      } else if (ct.docx_base64 && !exists.docx_base64) {
+        await db.run('UPDATE templates SET docx_base64 = ? WHERE id = ?', [ct.docx_base64, exists.id]);
+      }
+    }
+
+    await syncSeedTemplatesFile();
+
+    const all = await db.all('SELECT * FROM templates ORDER BY is_default DESC, id DESC');
+    res.json({
+      message: 'Templates synced successfully',
+      templates: all.map(t => ({
+        ...t,
+        default_data: JSON.parse(t.default_data_json || '{}'),
+        schema_fields: JSON.parse(t.schema_fields || '[]')
+      }))
+    });
+  } catch (err) {
+    console.error('Template sync error:', err);
+    res.status(500).json({ error: err.message || 'Failed to sync templates' });
   }
 });
 
@@ -393,6 +502,7 @@ router.delete('/:id', authenticateToken, async (req, res) => {
     }
 
     await db.run('DELETE FROM templates WHERE id = ?', [req.params.id]);
+    await syncSeedTemplatesFile();
     res.json({ message: 'Template deleted successfully' });
   } catch (err) {
     console.error('Delete template error:', err);

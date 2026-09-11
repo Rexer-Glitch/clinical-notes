@@ -2,9 +2,11 @@ import React, { useState, useEffect } from 'react';
 import {
   LayoutTemplate, Download, Upload, Trash2, FileCheck, Code, ArrowLeft,
   Loader2, Check, Plus, PlusCircle, Sparkles, X, Bed, Share2, Pill,
-  Stethoscope, ChevronDown, ChevronUp, Layers, FileText, Palette
+  Stethoscope, ChevronDown, ChevronUp, Layers, FileText, Palette,
+  Database, RefreshCw, ShieldCheck, FileDown, FileUp
 } from 'lucide-react';
 import { api } from '../services/api';
+import { templateSyncService } from '../services/templateSyncService';
 import OnlineLayoutDesignerModal from '../components/OnlineLayoutDesignerModal';
 
 const STANDARD_EXAMINATIONS = [
@@ -33,6 +35,71 @@ export default function TemplateManagerPage({ setView, onUseTemplate }) {
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [feedback, setFeedback] = useState({ type: '', message: '' });
+
+  // Backup & Cloud Sync States
+  const [showBackupModal, setShowBackupModal] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [importStatus, setImportStatus] = useState('');
+
+  const handleExportBackup = () => {
+    try {
+      const jsonStr = templateSyncService.exportTemplatesAsJson();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `clinical_templates_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setFeedback({ type: 'success', message: 'Templates exported successfully as JSON!' });
+    } catch (e) {
+      alert('Failed to export templates: ' + e.message);
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+        const text = evt.target.result;
+        const result = templateSyncService.importTemplatesFromJson(text);
+        if (result.success) {
+          setImportStatus(`Successfully imported ${result.count} template(s)! Syncing with cloud...`);
+          setIsSyncing(true);
+          await templateSyncService.syncWithServer(api);
+          setIsSyncing(false);
+          await fetchTemplates();
+          setFeedback({ type: 'success', message: `Imported and restored ${result.count} template(s) into your library!` });
+          setTimeout(() => {
+            setShowBackupModal(false);
+            setImportStatus('');
+          }, 1500);
+        } else {
+          alert('Import failed: ' + result.error);
+        }
+      };
+      reader.readAsText(file);
+    } catch (err) {
+      alert('Error reading backup file: ' + err.message);
+    }
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await templateSyncService.syncWithServer(api);
+      await fetchTemplates();
+      setFeedback({ type: 'success', message: 'Templates synchronized with cloud database!' });
+    } catch (err) {
+      setFeedback({ type: 'error', message: 'Sync failed: ' + err.message });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // In-App Builder Form State
   const [builderForm, setBuilderForm] = useState({
@@ -306,7 +373,17 @@ export default function TemplateManagerPage({ setView, onUseTemplate }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowBackupModal(true)}
+            className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-xs border border-slate-300 transition"
+            title="Backup & Restore Templates (JSON)"
+          >
+            <Database className="w-4 h-4 text-emerald-700" />
+            <span>Backup & Sync</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setShowDesignerModal(true)}
@@ -1231,14 +1308,141 @@ export default function TemplateManagerPage({ setView, onUseTemplate }) {
         <OnlineLayoutDesignerModal
           initialType="admission"
           onApplyLayout={() => {
-            loadTemplates();
+            fetchTemplates();
             setFeedback({ type: 'success', message: 'Custom online layout saved and ready for clinical use!' });
           }}
           onClose={() => {
             setShowDesignerModal(false);
-            loadTemplates();
+            fetchTemplates();
           }}
         />
+      )}
+
+      {/* Backup & Cloud Sync Modal */}
+      {showBackupModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base">Template Backup & Cloud Sync</h3>
+                  <p className="text-xs text-slate-400">Safeguard, export, and restore your clinical templates</p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowBackupModal(false); setImportStatus(''); }}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Dual-Persistence info */}
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3">
+                <ShieldCheck className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div className="text-xs text-emerald-900 space-y-1">
+                  <p className="font-bold">Permanent Dual-Persistence Active</p>
+                  <p className="text-emerald-800">
+                    Your custom templates are saved both in your browser's persistent storage and synced with the cloud database. Even if the backend server restarts or redeploys, your templates are retained.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action 1: Export */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <FileDown className="w-4 h-4 text-blue-600" />
+                    Export Templates (JSON)
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Download a complete backup of all custom templates and layouts to your computer.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleExportBackup}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm transition"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Download Backup</span>
+                </button>
+              </div>
+
+              {/* Action 2: Import */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 space-y-3">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <FileUp className="w-4 h-4 text-emerald-600" />
+                    Import & Restore Templates
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Restore previously exported template backups or transfer templates from another computer.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="cursor-pointer px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+                    <Upload className="w-4 h-4" />
+                    <span>Choose Backup File (.json)</span>
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleImportFile}
+                      className="hidden"
+                    />
+                  </label>
+                  {isSyncing && (
+                    <span className="text-xs text-slate-500 flex items-center gap-1">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
+                      Syncing...
+                    </span>
+                  )}
+                </div>
+                {importStatus && (
+                  <p className="text-xs font-medium text-emerald-700 bg-emerald-100/60 p-2 rounded-lg border border-emerald-200">
+                    {importStatus}
+                  </p>
+                )}
+              </div>
+
+              {/* Action 3: Cloud Sync */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                    <RefreshCw className={`w-4 h-4 text-indigo-600 ${isSyncing ? 'animate-spin' : ''}`} />
+                    Force Cloud Sync
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Re-synchronize all local templates with the server database.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleManualSync}
+                  disabled={isSyncing}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 shadow-sm transition disabled:opacity-50"
+                >
+                  {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => { setShowBackupModal(false); setImportStatus(''); }}
+                className="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

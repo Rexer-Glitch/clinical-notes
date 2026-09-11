@@ -3,7 +3,7 @@ import {
   Save, ArrowLeft, Plus, Trash2, Sparkles, Eye, Pill, 
   Activity, AlertTriangle, Check, ShieldAlert, Heart, Wind, HelpCircle,
   LayoutTemplate, Layers, X, FileText, Stethoscope, RotateCcw,
-  ChevronDown, ChevronUp
+  ChevronDown, ChevronUp, BookmarkPlus
 } from 'lucide-react';
 import { api } from '../services/api';
 import PediatricDosingSearchableDropdown from '../components/PediatricDosingSearchableDropdown';
@@ -853,6 +853,49 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
     }
   };
 
+  const handleSaveAsTemplate = async () => {
+    const defaultName = formData.diagnosis ? `Admission - ${formData.diagnosis}` : 'Custom Admission Template';
+    const tplName = window.prompt('Enter a name for this reusable template:', defaultName);
+    if (!tplName || !tplName.trim()) return;
+
+    try {
+      const cleanMeds = medications.filter(m => m.drug && m.drug.trim());
+      const cleanIv = ivFluids.filter(f => f.fluid && f.fluid.trim());
+      
+      const res = await api.templates.createCustom({
+        name: tplName.trim(),
+        type: 'admission',
+        description: `Custom admission template created from clinical chart (${formData.diagnosis || 'General'})`,
+        design_filename: selectedDesignFilename || 'admission_template.docx',
+        default_data: {
+          design_filename: selectedDesignFilename || 'admission_template.docx',
+          ward: formData.ward || '',
+          diagnosis: formData.diagnosis || '',
+          chief_complaint: formData.chief_complaint || '',
+          history_present_illness: formData.history_present_illness || '',
+          included_examinations: activeExamSystems,
+          custom_examinations: customExamSystems,
+          examination: examination,
+          assessment: formData.assessment || '',
+          plan: Array.isArray(formData.plan) ? formData.plan : (formData.plan ? String(formData.plan).split('\n').filter(Boolean) : []),
+          medications: cleanMeds,
+          iv_fluids: cleanIv
+        }
+      });
+
+      // Reload templates
+      const resTpls = await api.templates.list('admission');
+      const updatedTpls = resTpls.templates || [];
+      setTemplates(updatedTpls);
+      if (res && res.template) {
+        setSelectedTemplateId(res.template.id);
+      }
+      alert(`✓ Template "${tplName}" saved successfully and persisted in both browser and cloud!`);
+    } catch (err) {
+      alert('Failed to save template: ' + err.message);
+    }
+  };
+
   // Clinical Vitals Alert Evaluation
   const hrNum = parseInt(vitals.hr, 10);
   const tempNum = parseFloat(vitals.temp);
@@ -894,6 +937,16 @@ export default function AdmissionNoteFormPage({ noteId, initialTemplateId, setVi
           >
             <Sparkles className="w-4 h-4" />
             AI Shorthand
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSaveAsTemplate}
+            className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition"
+            title="Save current clinical data as a reusable template"
+          >
+            <BookmarkPlus className="w-4 h-4" />
+            <span>Save as Template</span>
           </button>
 
           <button

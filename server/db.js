@@ -1,5 +1,6 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
 const dbPath = path.join(__dirname, 'clinical_notes.db');
@@ -112,6 +113,9 @@ async function initDb() {
   const templateCols = await db.all('PRAGMA table_info(templates)');
   if (!templateCols.some(c => c.name === 'default_data_json')) {
     await db.run("ALTER TABLE templates ADD COLUMN default_data_json TEXT DEFAULT '{}'");
+  }
+  if (!templateCols.some(c => c.name === 'docx_base64')) {
+    await db.run("ALTER TABLE templates ADD COLUMN docx_base64 TEXT");
   }
 
   const noteCols = await db.all('PRAGMA table_info(notes)');
@@ -396,6 +400,57 @@ async function initDb() {
       JSON.stringify(sampleReferralData)
     ]);
     console.log('✓ Seeding complete!');
+  }
+
+  // Ensure persistent custom templates from seed_templates.json are loaded
+  const seedPath = path.join(__dirname, 'seed_templates.json');
+  if (fs.existsSync(seedPath)) {
+    try {
+      const seedContent = fs.readFileSync(seedPath, 'utf8');
+      const seedTemplates = JSON.parse(seedContent);
+      if (Array.isArray(seedTemplates)) {
+        for (const st of seedTemplates) {
+          const exists = await db.get('SELECT id, filename, docx_base64 FROM templates WHERE name = ? OR filename = ?', [st.name, st.filename]);
+          if (!exists) {
+            console.log(`Seeding persistent custom template: "${st.name}"`);
+            await db.run(`
+              INSERT INTO templates (name, type, description, filename, schema_fields, default_data_json, docx_base64, is_default)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `, [
+              st.name,
+              st.type,
+              st.description || '',
+              st.filename,
+              typeof st.schema_fields === 'string' ? st.schema_fields : JSON.stringify(st.schema_fields || []),
+              typeof st.default_data_json === 'string' ? st.default_data_json : JSON.stringify(st.default_data_json || {}),
+              st.docx_base64 || null,
+              st.is_default ? 1 : 0
+            ]);
+          } else if (st.docx_base64 && !exists.docx_base64) {
+            await db.run('UPDATE templates SET docx_base64 = ? WHERE id = ?', [st.docx_base64, exists.id]);
+          }
+
+          // Restore docx file to uploads directory if missing
+          if (st.docx_base64 && st.filename) {
+            const uploadsDir = path.join(__dirname, 'uploads');
+            if (!fs.existsSync(uploadsDir)) {
+              fs.mkdirSync(uploadsDir, { recursive: true });
+            }
+            const uploadFile = path.join(uploadsDir, st.filename);
+            if (!fs.existsSync(uploadFile)) {
+              try {
+                fs.writeFileSync(uploadFile, Buffer.from(st.docx_base64, 'base64'));
+                console.log(`✓ Restored template docx to uploads: ${st.filename}`);
+              } catch (e) {
+                console.warn(`Could not restore template docx ${st.filename}:`, e.message);
+              }
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Could not load seed_templates.json:', err.message);
+    }
   }
 }
 

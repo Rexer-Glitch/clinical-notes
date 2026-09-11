@@ -1,3 +1,5 @@
+import { templateSyncService } from './templateSyncService';
+
 const API_BASE = import.meta.env.VITE_API_URL
   ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/api`
   : '/api';
@@ -58,13 +60,15 @@ async function request(endpoint, options = {}) {
     data = null;
   }
 
+  const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
   if (!response.ok) {
     let errorMsg = 'An error occurred';
     if (data && data.error) {
       errorMsg = data.error;
     } else if (response.status === 404) {
       errorMsg = 'Backend API endpoint not found (404). If running on Vercel, please set VITE_API_URL to your live backend server (e.g. on Render).';
-    } else if (text && text.length < 200 && !text.includes('<!DOCTYPE')) {
+    } else if (text && text.length < 200 && !text.includes('<!DOCTYPE') && !text.includes('<html')) {
       errorMsg = text;
     } else {
       errorMsg = `Server error (${response.status}): ${response.statusText || 'Unable to connect to backend'}`;
@@ -72,8 +76,12 @@ async function request(endpoint, options = {}) {
     throw new Error(errorMsg);
   }
 
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
+  // If status is 200 but content is HTML (SPA rewrite fallback on Vercel)
+  if (text.includes('<!DOCTYPE') || text.includes('<html') || (contentType.includes('text/html') && !contentType.includes('json'))) {
+    throw new Error('Backend server returned an HTML page instead of API JSON. The backend server might be starting up or VITE_API_URL needs to be set in Vercel settings.');
+  }
+
+  if (contentType.includes('application/json') || data !== null) {
     return data !== null ? data : {};
   }
   return response;
@@ -158,11 +166,32 @@ export const api = {
   templates: {
     async list(type = '') {
       const q = type ? `?type=${encodeURIComponent(type)}` : '';
-      return await request(`/templates${q}`);
+      try {
+        const res = await request(`/templates${q}`);
+        const serverTpls = (res && Array.isArray(res.templates)) ? res.templates : [];
+        const merged = templateSyncService.mergeServerAndLocalTemplates(serverTpls, type);
+        // Background sync to ensure server has all local custom templates
+        templateSyncService.syncWithServer(api);
+        return { templates: merged };
+      } catch (err) {
+        console.warn('api.templates.list failed, using persistent local templates fallback:', err.message);
+        const cached = templateSyncService.mergeServerAndLocalTemplates([], type);
+        return { templates: cached, _isFallback: true, error: err.message };
+      }
+    },
+    async sync(templatesList) {
+      return await request('/templates/sync', {
+        method: 'POST',
+        body: JSON.stringify({ templates: templatesList })
+      });
     },
     async listDocxFiles(type = '') {
       const q = type ? `?type=${encodeURIComponent(type)}` : '';
-      return await request(`/templates/docx-files${q}`);
+      try {
+        return await request(`/templates/docx-files${q}`);
+      } catch (err) {
+        return { files: [] };
+      }
     },
     async inspectDocx(formDataOrBody) {
       if (formDataOrBody instanceof FormData) {
@@ -177,33 +206,75 @@ export const api = {
       });
     },
     async createOnlineLayout(layoutData) {
-      return await request('/templates/online-layout', {
-        method: 'POST',
-        body: JSON.stringify(layoutData)
-      });
+      templateSyncService.saveLocalCustomTemplate(layoutData);
+      try {
+        const res = await request('/templates/online-layout', {
+          method: 'POST',
+          body: JSON.stringify(layoutData)
+        });
+        if (res && res.template) {
+          templateSyncService.saveLocalCustomTemplate(res.template);
+        }
+        return res;
+      } catch (err) {
+        const localTpl = {
+          ...layoutData,
+          id: 'local-' + Date.now(),
+          created_at: new Date().toISOString()
+        };
+        templateSyncService.saveLocalCustomTemplate(localTpl);
+        return { message: 'Template saved in browser storage', template: localTpl };
+      }
     },
     async get(id) {
-      return await request(`/templates/${id}`);
+      try {
+        return await request(`/templates/${id}`);
+      } catch (err) {
+        const local = templateSyncService.getLocalCustomTemplates().find(t => t.id === id);
+        if (local) return { template: local };
+        throw err;
+      }
     },
     async createCustom(templateData) {
-      return await request('/templates/custom', {
-        method: 'POST',
-        body: JSON.stringify(templateData)
-      });
+      templateSyncService.saveLocalCustomTemplate(templateData);
+      try {
+        const res = await request('/templates/custom', {
+          method: 'POST',
+          body: JSON.stringify(templateData)
+        });
+        if (res && res.template) {
+          templateSyncService.saveLocalCustomTemplate(res.template);
+        }
+        return res;
+      } catch (err) {
+        const localTpl = {
+          ...templateData,
+          id: 'local-' + Date.now(),
+          created_at: new Date().toISOString()
+        };
+        templateSyncService.saveLocalCustomTemplate(localTpl);
+        return { message: 'Template saved in browser storage', template: localTpl };
+      }
     },
     async update(id, templateData) {
+      templateSyncService.saveLocalCustomTemplate({ ...templateData, id });
       return await request(`/templates/${id}`, {
         method: 'PUT',
         body: JSON.stringify(templateData)
       });
     },
     async upload(formData) {
-      return await request('/templates/upload', {
+      const res = await request('/templates/upload', {
         method: 'POST',
         body: formData
       });
+      if (res && res.template) {
+        templateSyncService.saveLocalCustomTemplate(res.template);
+      }
+      return res;
     },
     async delete(id) {
+      templateSyncService.removeLocalCustomTemplate(id);
       return await request(`/templates/${id}`, {
         method: 'DELETE'
       });
