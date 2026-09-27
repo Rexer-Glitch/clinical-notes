@@ -14,19 +14,27 @@ const router = express.Router();
  */
 async function syncSeedTemplatesFile() {
   try {
-    const customTemplates = await db.all('SELECT * FROM templates WHERE is_default = 0');
-    const seeds = customTemplates.map(t => ({
-      name: t.name,
-      type: t.type,
-      description: t.description,
-      filename: t.filename,
-      schema_fields: t.schema_fields,
-      default_data_json: t.default_data_json,
-      is_default: 0,
-      docx_base64: t.docx_base64 || null
-    }));
+    const customTemplates = await db.all('SELECT * FROM templates WHERE is_default = 0 ORDER BY id DESC');
+    const seen = new Set();
+    const seeds = [];
+    for (const t of customTemplates) {
+      const key = (t.name || '').trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        seeds.push({
+          name: t.name,
+          type: t.type,
+          description: t.description,
+          filename: t.filename,
+          schema_fields: t.schema_fields,
+          default_data_json: t.default_data_json,
+          is_default: 0,
+          docx_base64: t.docx_base64 || null
+        });
+      }
+    }
     const target = path.join(__dirname, '..', 'seed_templates.json');
-    fs.writeFileSync(target, JSON.stringify(seeds, null, 2));
+    fs.writeFileSync(target, JSON.stringify(seeds.reverse(), null, 2));
   } catch (err) {
     console.warn('Could not update seed_templates.json:', err.message);
   }
